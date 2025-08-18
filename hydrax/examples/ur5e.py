@@ -2,6 +2,8 @@ import argparse
 
 import mujoco
 
+import jax
+
 from hydrax.algs import MPPI, MPPIStagedRollout
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.ur5e import UR5e
@@ -9,6 +11,7 @@ from hydrax.tasks.ur5e import UR5e
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
+    # jax.config.update('jax_platform_name', 'cpu')
 
     # Define the task (cost and dynamics)
     task = UR5e()
@@ -16,7 +19,7 @@ if __name__ == "__main__":
     # Set up the controller
     ctrl = MPPI(
         task,
-        num_samples=1024,
+        num_samples=256,
         noise_level=0.4,
         temperature=0.01,
         num_randomizations=1,
@@ -36,7 +39,8 @@ if __name__ == "__main__":
             ctrl,
             mj_model,
             mj_data,
-            frequency=25,
+            frequency=50,
             show_traces=False,
             record_video=False,
+            head_less=False
         )

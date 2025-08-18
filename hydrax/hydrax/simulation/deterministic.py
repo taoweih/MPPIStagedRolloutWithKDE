@@ -38,6 +38,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     reference: np.ndarray = None,
     reference_fps: float = 30.0,
     record_video: bool = False,
+    head_less: bool = False,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -143,39 +144,16 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         if not recorder.start():
             record_video = False
         renderer = mujoco.Renderer(mj_model, height=height, width=width)
-
-    # Start the simulation
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-        if fixed_camera_id is not None:
-            # Set the custom camera
-            viewer.cam.fixedcamid = fixed_camera_id
-            viewer.cam.type = 2
-
-        # Set up rollout traces
-        if show_traces:
-            num_trace_sites = len(controller.task.trace_site_ids)
-            for i in range(
-                num_trace_sites * num_traces * controller.ctrl_steps
-            ):
-                mujoco.mjv_initGeom(
-                    viewer.user_scn.geoms[i],
-                    type=mujoco.mjtGeom.mjGEOM_LINE,
-                    size=np.zeros(3),
-                    pos=np.zeros(3),
-                    mat=np.eye(3).flatten(),
-                    rgba=np.array(trace_color),
-                )
-                viewer.user_scn.ngeom += 1
-
+    
+    if head_less:
         # Add geometry for the ghost reference
         if reference is not None:
             mujoco.mjv_addGeoms(
                 mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
             )
         cost_array = []
-        while viewer.is_running():
 
-        # for _ in range(200):
+        for _ in range(200):
             start_time = time.time()
 
             # Set the start state for the controller
@@ -192,21 +170,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             plan_time = time.time() - plan_start
 
-            # Visualize the rollouts
-            if show_traces:
-                ii = 0
-                for k in range(num_trace_sites):
-                    for i in range(num_traces):
-                        for j in range(controller.ctrl_steps):
-                            mujoco.mjv_connector(
-                                viewer.user_scn.geoms[ii],
-                                mujoco.mjtGeom.mjGEOM_LINE,
-                                trace_width,
-                                rollouts.trace_sites[i, j, k],
-                                rollouts.trace_sites[i, j + 1, k],
-                            )
-                            ii += 1
-
             # Update the ghost reference
             if reference is not None:
                 t_ref = mj_data.time * reference_fps
@@ -214,15 +177,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 i_ref = min(i_ref, reference.shape[0] - 1)
                 ref_data.qpos[:] = reference[i_ref]
                 mujoco.mj_forward(mj_model, ref_data)
-                mujoco.mjv_updateScene(
-                    mj_model,
-                    ref_data,
-                    vopt,
-                    pert,
-                    viewer.cam,
-                    catmask,
-                    viewer.user_scn,
-                )
 
             # query the control spline at the sim frequency
             # (we assume the sim freq is the same as the low-level ctrl freq)
@@ -238,13 +192,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             for i in range(sim_steps_per_replan):
                 mj_data.ctrl[:] = np.array(us[i])
                 mujoco.mj_step(mj_model, mj_data)
-                viewer.sync()
 
-                # Capture frame if recording
-                if record_video and recorder.is_recording:
-                    renderer.update_scene(mj_data, viewer.cam)
-                    frame = renderer.render()
-                    recorder.add_frame(frame.tobytes())
 
             cost = controller.task.success_function(mj_data, mj_data.ctrl[:])
             cost_array.append(cost)
@@ -268,6 +216,132 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         plt.ylabel("Current objective")
         plt.title(f'Horizon: {controller.plan_horizon}s')
         plt.show()
+    else:
+
+        # Start the simulation
+        with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+            if fixed_camera_id is not None:
+                # Set the custom camera
+                viewer.cam.fixedcamid = fixed_camera_id
+                viewer.cam.type = 2
+
+            # Set up rollout traces
+            if show_traces:
+                num_trace_sites = len(controller.task.trace_site_ids)
+                for i in range(
+                    num_trace_sites * num_traces * controller.ctrl_steps
+                ):
+                    mujoco.mjv_initGeom(
+                        viewer.user_scn.geoms[i],
+                        type=mujoco.mjtGeom.mjGEOM_LINE,
+                        size=np.zeros(3),
+                        pos=np.zeros(3),
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array(trace_color),
+                    )
+                    viewer.user_scn.ngeom += 1
+
+            # Add geometry for the ghost reference
+            if reference is not None:
+                mujoco.mjv_addGeoms(
+                    mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
+                )
+            cost_array = []
+            while viewer.is_running():
+
+            # for _ in range(200):
+                start_time = time.time()
+
+                # Set the start state for the controller
+                mjx_data = mjx_data.replace(
+                    qpos=jnp.array(mj_data.qpos),
+                    qvel=jnp.array(mj_data.qvel),
+                    mocap_pos=jnp.array(mj_data.mocap_pos),
+                    mocap_quat=jnp.array(mj_data.mocap_quat),
+                    time=mj_data.time,
+                )
+                
+                # Do a replanning step
+                plan_start = time.time()
+                policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+                plan_time = time.time() - plan_start
+
+                # Visualize the rollouts
+                if show_traces:
+                    ii = 0
+                    for k in range(num_trace_sites):
+                        for i in range(num_traces):
+                            for j in range(controller.ctrl_steps):
+                                mujoco.mjv_connector(
+                                    viewer.user_scn.geoms[ii],
+                                    mujoco.mjtGeom.mjGEOM_LINE,
+                                    trace_width,
+                                    rollouts.trace_sites[i, j, k],
+                                    rollouts.trace_sites[i, j + 1, k],
+                                )
+                                ii += 1
+
+                # Update the ghost reference
+                if reference is not None:
+                    t_ref = mj_data.time * reference_fps
+                    i_ref = int(t_ref)
+                    i_ref = min(i_ref, reference.shape[0] - 1)
+                    ref_data.qpos[:] = reference[i_ref]
+                    mujoco.mj_forward(mj_model, ref_data)
+                    mujoco.mjv_updateScene(
+                        mj_model,
+                        ref_data,
+                        vopt,
+                        pert,
+                        viewer.cam,
+                        catmask,
+                        viewer.user_scn,
+                    )
+
+                # query the control spline at the sim frequency
+                # (we assume the sim freq is the same as the low-level ctrl freq)
+                sim_dt = mj_model.opt.timestep
+                t_curr = mj_data.time
+
+                tq = jnp.arange(0, sim_steps_per_replan) * sim_dt + t_curr
+                tk = policy_params.tk
+                knots = policy_params.mean[None, ...]
+                us = np.asarray(jit_interp_func(tq, tk, knots))[0]  # (ss, nu)
+
+                # simulate the system between spline replanning steps
+                for i in range(sim_steps_per_replan):
+                    mj_data.ctrl[:] = np.array(us[i])
+                    mujoco.mj_step(mj_model, mj_data)
+                    viewer.sync()
+
+                    # Capture frame if recording
+                    if record_video and recorder.is_recording:
+                        renderer.update_scene(mj_data, viewer.cam)
+                        frame = renderer.render()
+                        recorder.add_frame(frame.tobytes())
+
+                cost = controller.task.success_function(mj_data, mj_data.ctrl[:])
+                cost_array.append(cost)
+                # print(f'cost:{controller.task.running_cost(mj_data, mj_data.ctrl[:])}')
+
+                # Try to run in roughly realtime
+                elapsed = time.time() - start_time
+                if elapsed < step_dt:
+                    time.sleep(step_dt - elapsed)
+
+                # Print some timing information
+                rtr = step_dt / (time.time() - start_time)
+                print(
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
+                    end="\r",
+                )
+            plt.figure()
+            plt.plot(cost_array)
+            # plt.ylim(9,13)
+            plt.xlabel("Iterations")
+            plt.ylabel("Current objective")
+            plt.title(f'Horizon: {controller.plan_horizon}s')
+            plt.show()
 
     # Preserve the last printout
     print("")

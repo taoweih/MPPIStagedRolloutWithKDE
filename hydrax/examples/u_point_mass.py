@@ -1,6 +1,7 @@
 import argparse
 
 import mujoco
+import jax
 
 from hydrax.algs import MPPI, MPPIStagedRollout
 from hydrax.simulation.deterministic import run_interactive
@@ -9,6 +10,7 @@ from hydrax.tasks.u_point_mass import UPointMass
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
+    # jax.config.update('jax_platform_name', 'cpu')
 
     # Define the task (cost and dynamics)
     task = UPointMass()
@@ -38,4 +40,5 @@ if __name__ == "__main__":
             frequency=50,
             show_traces=False,
             record_video=False,
+            head_less=False,
         )
