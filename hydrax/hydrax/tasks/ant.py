@@ -10,7 +10,7 @@ from hydrax.task_base import Task
 
 
 class Ant(Task):
-    """Standup task for the Unitree G1 humanoid."""
+    """Ant task."""
 
     def __init__(self) -> None:
         """Load the MuJoCo model and set task parameters."""
