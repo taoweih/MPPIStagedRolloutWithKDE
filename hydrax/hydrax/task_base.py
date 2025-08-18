@@ -71,7 +71,7 @@ class Task(ABC):
         """
         pass
 
-    @abstractmethod
+    # @abstractmethod
     def success_function(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         """The objective cost ℓ(xₜ, uₜ).
 
@@ -82,7 +82,7 @@ class Task(ABC):
         Returns:
             The scalar objective cost ℓ(xₜ, uₜ)
         """
-        pass
+        return self.running_cost(state, control)
 
     @abstractmethod
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
