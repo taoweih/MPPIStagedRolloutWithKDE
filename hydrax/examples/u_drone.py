@@ -22,7 +22,7 @@ if __name__ == "__main__":
         num_randomizations=1,
         plan_horizon=2.0,
         spline_type="zero",
-        num_knots=4,
+        num_knots=16,
     )
 
     # Define the model used for simulation

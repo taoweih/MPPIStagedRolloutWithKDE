@@ -362,6 +362,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
     reference_fps: float = 30.0,
     GOAL_THRESHOLD: float = 1.0,
     mj_data_reset: mujoco.MjData = None,
+    num_trials = 100,
 ) -> int:
     """Run an interactive simulation with the MPC controller.
 
@@ -452,7 +453,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
     num_sucess = 0
 
     number_of_iteration = 100
-    number_of_trials = 100
+    number_of_trials = num_trials
 
     total_plan_time = 0
     frequency = 0

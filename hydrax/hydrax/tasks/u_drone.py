@@ -15,7 +15,7 @@ class UDrone(Task):
     def __init__(self) -> None:
         """Load the MuJoCo model and set task parameters."""
         mj_model = mujoco.MjModel.from_xml_path(ROOT + "/models/u_drone/scene.xml")
-        mj_model.opt.timestep = 0.005
+        mj_model.opt.timestep = 0.01
         super().__init__(
             mj_model,
             trace_sites= None #["imu_in_torso", "left_foot", "right_foot"],
