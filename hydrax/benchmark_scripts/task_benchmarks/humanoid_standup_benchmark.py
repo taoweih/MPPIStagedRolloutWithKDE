@@ -52,7 +52,7 @@ if __name__ == "__main__":
     task = HumanoidStandup()
 
     for h in tqdm(range(Horizon_steps)):
-        HORIZON = (h+1)*0.02
+        HORIZON = (h+1)*0.2
 
         ctrl_list = [PredictiveSampling(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=NUM_KNOTS),
                      
@@ -75,6 +75,11 @@ if __name__ == "__main__":
             mj_model.opt.timestep = 0.01
 
             mj_data = mujoco.MjData(mj_model)
+            mj_data_reset = mujoco.MjData(mj_model)
+            mj_data_reset.qpos[:] = mj_model.keyframe("stand").qpos
+            mj_data_reset.qpos[3:7] = [0.7, 0.0, -0.7, 0.0]
+            mj_data_reset.qpos[2] = 0.1
+            mujoco.mj_forward(mj_model, mj_data_reset)
 
             num_success, control_freq, state_trajectory, control_trajectory = run_benchmark(
                 ctrl,
@@ -82,6 +87,7 @@ if __name__ == "__main__":
                 mj_data,
                 frequency=25,
                 GOAL_THRESHOLD=11,
+                mj_data_reset = mj_data_reset,
             )
             # num_success = h+j
             # control_freq = 0

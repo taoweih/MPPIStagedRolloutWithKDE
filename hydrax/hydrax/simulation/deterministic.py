@@ -361,6 +361,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
     reference: np.ndarray = None,
     reference_fps: float = 30.0,
     GOAL_THRESHOLD: float = 1.0,
+    mj_data_reset: mujoco.MjData = None,
 ) -> int:
     """Run an interactive simulation with the MPC controller.
 
@@ -480,8 +481,8 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
         #     ]
         # )
         # cube.qpos[3:7] = start_quat
-
-        mj_data_reset = mujoco.MjData(mj_model)
+        if mj_data_reset is None:
+            mj_data_reset = mujoco.MjData(mj_model)
         mj_data.qpos[:] = mj_data_reset.qpos
         mj_data.qvel[:] = mj_data_reset.qvel
         mj_data.mocap_pos[:] = mj_data_reset.mocap_pos
