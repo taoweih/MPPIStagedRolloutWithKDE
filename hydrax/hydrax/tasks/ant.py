@@ -21,7 +21,7 @@ class Ant(Task):
         )
 
         self.end_effector_pos_id = mujoco.mj_name2id(
-            self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "torso_site"
+            self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "torso"
         )
         self.goal_pos_id = mujoco.mj_name2id(
             self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "goal"
@@ -31,7 +31,9 @@ class Ant(Task):
         end_effector_pos = state.xpos[self.end_effector_pos_id]
         goal_pos = state.xpos[self.goal_pos_id]
 
-        cost = 10*jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0)
+        height_cost = jnp.square(0.75 -state.xpos[self.end_effector_pos_id, 2])
+
+        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0) + 10*height_cost
         return cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
