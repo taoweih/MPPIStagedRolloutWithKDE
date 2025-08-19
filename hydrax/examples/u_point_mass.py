@@ -2,6 +2,7 @@ import argparse
 
 import mujoco
 import jax
+import jax.numpy as jnp
 
 from hydrax.algs import MPPI, MPPIStagedRollout
 from hydrax.simulation.deterministic import run_interactive
@@ -16,15 +17,16 @@ if __name__ == "__main__":
     task = UPointMass()
 
     # Set up the controller
-    ctrl = MPPI(
+    ctrl = MPPIStagedRollout(
         task,
         num_samples=512,
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=1.5,
+        plan_horizon=1.0,
         spline_type="zero",
         num_knots=16,
+        state_weight=jnp.array([1, 1])
     )
 
     # Define the model used for simulation

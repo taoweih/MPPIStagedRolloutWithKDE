@@ -46,6 +46,7 @@ class MPPIStagedRollout(SamplingBasedController):
         temperature: float,
         num_knots_per_stage: int = 4,
         kde_bandwidth: float = 1.0,
+        state_weight: jnp.array = None,
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
@@ -90,6 +91,10 @@ class MPPIStagedRollout(SamplingBasedController):
 
         self.num_knots_per_stage = num_knots_per_stage
         self.kde_bandwidth = kde_bandwidth
+        if state_weight is None:
+            self.state_weight = 1
+        else:
+            self.state_weight = state_weight
 
     def init_params(
         self, initial_knots: jax.Array = None, seed: int = 0
@@ -188,8 +193,10 @@ class MPPIStagedRollout(SamplingBasedController):
             states = jax.tree_util.tree_map(lambda x, new: x.at[:, n*timesteps_per_stage:(n+1)*timesteps_per_stage,...].set(new),states, partial_states)
 
             # resampling indices
-            jnp_latest_state = jnp.concatenate([latest_state.qpos, latest_state.qvel],axis=1)
-            # jnp_latest_state = latest_state.qpos
+            # jnp_latest_state = jnp.concatenate([latest_state.qpos, latest_state.qvel],axis=1)
+            jnp_latest_state = latest_state.qpos
+            weight = self.state_weight
+            jnp_latest_state = weight * jnp_latest_state
             kde = gaussian_kde(jnp_latest_state.T,bw_method=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
 
             p_x = kde.pdf(jnp_latest_state.T)
