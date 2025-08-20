@@ -92,7 +92,7 @@ class MPPIStagedRollout(SamplingBasedController):
         self.num_knots_per_stage = num_knots_per_stage
         self.kde_bandwidth = kde_bandwidth
         if state_weight is None:
-            self.state_weight = 1
+            self.state_weight = jnp.array([1])
         else:
             self.state_weight = state_weight
 

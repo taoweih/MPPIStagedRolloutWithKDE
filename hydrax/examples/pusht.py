@@ -51,7 +51,7 @@ elif args.algorithm == "mppi":
     print("Running MPPI")
     ctrl = MPPI(
         task,
-        num_samples=128,
+        num_samples=512,
         noise_level=10.0,
         num_randomizations=1,
         temperature=0.0001,
