@@ -513,7 +513,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             plan_time = time.time() - plan_start
             total_plan_time += plan_time
-            frequency = ((i*j)/total_plan_time)
+            frequency = ((i*(number_of_iteration)+j)/total_plan_time)
 
             # Update the ghost reference
             if reference is not None:
