@@ -17,6 +17,7 @@ class PushT(Task):
         mj_model = mujoco.MjModel.from_xml_path(
             ROOT + "/models/pusht/scene.xml"
         )
+        mj_model.opt.timestep = 0.001
         super().__init__(mj_model, trace_sites=["pusher"])
 
         # Get sensor ids
