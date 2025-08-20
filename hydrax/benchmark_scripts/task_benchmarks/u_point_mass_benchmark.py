@@ -19,155 +19,30 @@ from ray import tune
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
-    tune_horizon = 1.4
     # common non-tunable parameters
     NUM_SAMPLES = 512
     NUM_KNOTS = 16
     SPLINE_TYPE = "zero"
 
-    # tune PS
-    def objective(config):  
-        ctrl = PredictiveSampling(task,num_samples=NUM_SAMPLES,noise_level=config["noise_level"]
-                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
-        mj_model = task.mj_model
-        mj_model.opt.timestep = 0.01
-        mj_data = mujoco.MjData(mj_model)
-        num_success, _, _, _ = run_benchmark(
-                ctrl,
-                mj_model,
-                mj_data,
-                frequency=25,
-                GOAL_THRESHOLD=0.05,
-                num_trials=10,
-            ) 
-        return {"score": num_success}
-
-    search_space = { 
-        "noise_level": tune.uniform(0, 4),
-    }
-
-    tuner = tune.Tuner(objective, param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
-    results = tuner.fit()
-
     # common tunable parameters
-    NOISE_LEVEL = results.get_best_result().config["noise_level"]
-
-    # tune mppi
-    def objective(config):  
-        ctrl = MPPI(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=config["temperature"]
-                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
-        mj_model = task.mj_model
-        mj_model.opt.timestep = 0.01
-        mj_data = mujoco.MjData(mj_model)
-        num_success, _, _, _ = run_benchmark(
-                ctrl,
-                mj_model,
-                mj_data,
-                frequency=25,
-                GOAL_THRESHOLD=0.05,
-                num_trials=10,
-            ) 
-        return {"score": num_success}
-
-    search_space = { 
-        "tempereature": tune.uniform(0, 1),
-    }
-
-    tuner = tune.Tuner(objective, param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
-    results = tuner.fit()
+    NOISE_LEVEL = 2.0
 
     # MPPI specific
-    TEMPERATURE = results.get_best_result().config["temperature"]
-
-    # tune mppi staged rollout
-    def objective(config):  
-        ctrl = MPPIStagedRollout(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=TEMPERATURE, kde_bandwidth=config["kde_bandwidth"]
-                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
-        mj_model = task.mj_model
-        mj_model.opt.timestep = 0.01
-        mj_data = mujoco.MjData(mj_model)
-        num_success, _, _, _ = run_benchmark(
-                ctrl,
-                mj_model,
-                mj_data,
-                frequency=25,
-                GOAL_THRESHOLD=0.05,
-                num_trials=10,
-            ) 
-        return {"score": num_success}
-
-    search_space = { 
-        "kde_bandwidth": tune.uniform(0, 1),
-    }
-
-    tuner = tune.Tuner(objective, param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
-    results = tuner.fit()
+    TEMPERATURE = 0.01
 
     # MPPI staged rollout specific
     NUM_KNOTS_PER_STAGE = 4
-    KDE_BANDWIDTH = results.get_best_result().config["kde_bandwidth"]
-
-    # tune DIAL MPC
-    def objective(config):  
-        ctrl = DIAL(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=TEMPERATURE, beta_horizon=config["beta_horizon"], beta_opt_iter=config["beta_opt_iter"]
-                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
-        mj_model = task.mj_model
-        mj_model.opt.timestep = 0.01
-        mj_data = mujoco.MjData(mj_model)
-        num_success, _, _, _ = run_benchmark(
-                ctrl,
-                mj_model,
-                mj_data,
-                frequency=25,
-                GOAL_THRESHOLD=0.05,
-                num_trials=10,
-            ) 
-        return {"score": num_success}
-
-    search_space = { 
-        "beta_horizon": tune.uniform(0, 2),
-        "beta_opt_iter": tune.uniform(0, 2),
-    }
-
-    tuner = tune.Tuner(objective, param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
-    results = tuner.fit()
+    KDE_BANDWIDTH = 0.1
 
     # DIAL specific
-    BETA_OPT_ITER = results.get_best_result().config["beta_opt_iter"]
-    BETA_HORIZON = results.get_best_result().config["beta_horizon"]
-
-    # tune CEM
-    def objective(config):  
-        ctrl = CEM(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=TEMPERATURE, explore_fraction=config["explore_fraction"], 
-                   num_elites=config["num_elites"], sigma_start=config["sigma_start"], sigma_min=config["sigma_min"], plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
-        mj_model = task.mj_model
-        mj_model.opt.timestep = 0.01
-        mj_data = mujoco.MjData(mj_model)
-        num_success, _, _, _ = run_benchmark(
-                ctrl,
-                mj_model,
-                mj_data,
-                frequency=25,
-                GOAL_THRESHOLD=0.05,
-                num_trials=10,
-            ) 
-        return {"score": num_success}
-
-    search_space = { 
-        "explore_fraction": tune.uniform(0, 1),
-        "sigma_start": tune.uniform(NOISE_LEVEL/2, NOISE_LEVEL*2),
-        "sigma_min": tune.uniform(NOISE_LEVEL/16, NOISE_LEVEL/4),
-        "num_elites": tune.randint(int(NUM_SAMPLES/16), int(NUM_SAMPLES/2))
-    }
-
-    tuner = tune.Tuner(objective, param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
-    results = tuner.fit()
+    BETA_OPT_ITER = 1
+    BETA_HORIZON = 0.8
 
     # CEM specific
-    NUM_ELITES = results.get_best_result().config["num_elites"]
-    SIGMA_START = results.get_best_result().config["sigma_start"]
-    SIGMA_MIN = results.get_best_result().config["sigma_min"]
-    EXPLORE_FRACTION = results.get_best_result().config["explore_fraction"]
+    NUM_ELITES = int(NUM_SAMPLES/8)
+    SIGMA_START = NOISE_LEVEL
+    SIGMA_MIN = NOISE_LEVEL/16
+    EXPLORE_FRACTION = 0.5
 
     Horizon_steps = 25
     Horizon_start = 0.8
