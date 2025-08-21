@@ -57,6 +57,14 @@ class PushT(Task):
         close_to_block_cost = jnp.sum(jnp.square(close_to_block_err))
 
         return position_cost + orientation_cost + 0.01 * close_to_block_cost
+    
+    def success_function(self, state, control):
+        position_err = self._get_position_err(state)
+        orientation_err = self._get_orientation_err(state)
+
+        position_cost = jnp.sum(jnp.square(position_err))
+        orientation_cost = jnp.sum(jnp.square(orientation_err))
+        return position_cost + orientation_cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         """The terminal cost ℓ_T(x_T)."""

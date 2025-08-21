@@ -5,6 +5,8 @@ from hydrax.algs import PredictiveSampling, MPPI, MPPIStagedRollout
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.pusht import PushT
 
+import jax.numpy as jnp
+
 """
 Run an interactive simulation of the push-T task with predictive sampling.
 """
@@ -55,7 +57,7 @@ elif args.algorithm == "mppi":
         noise_level=2.0,
         num_randomizations=1,
         temperature=0.0001,
-        plan_horizon=0.1,
+        plan_horizon=0.2,
         spline_type="zero",
         num_knots=16,
     )
@@ -63,13 +65,15 @@ elif args.algorithm == "mppi_staged_rollout":
     print("Running MPPI with staged rollout")
     ctrl = MPPIStagedRollout(
         task,
-        num_samples=128,
-        noise_level=10.0,
+        num_samples=512,
+        noise_level=2.0,
         num_randomizations=1,
         temperature=0.0001,
-        plan_horizon=0.5,
+        plan_horizon=0.3,
         spline_type="zero",
         num_knots=16,
+        kde_bandwidth=0.1,
+        # state_weight=jnp.array([0,0,0, 0,0,0, 1,1,1, 0,0,0])
     )
 else:
     parser.error("Invalid algorithm")

@@ -76,6 +76,7 @@ if __name__ == "__main__":
 
             mj_data = mujoco.MjData(mj_model)
             mj_data_reset = mujoco.MjData(mj_model)
+            mj_data_reset.qpos = [0.1, 0.1, 1.3, 0.0, 0.0]
             mujoco.mj_forward(mj_model, mj_data_reset)
 
             num_success, control_freq, state_trajectory, control_trajectory = run_benchmark(
@@ -83,8 +84,9 @@ if __name__ == "__main__":
                 mj_model,
                 mj_data,
                 frequency=25,
-                GOAL_THRESHOLD=11,
+                GOAL_THRESHOLD=0.01,
                 mj_data_reset = mj_data_reset,
+                num_trials=10,
             )
             # num_success = h+j
             # control_freq = 0
