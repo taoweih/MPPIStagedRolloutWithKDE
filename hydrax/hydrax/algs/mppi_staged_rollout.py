@@ -193,14 +193,16 @@ class MPPIStagedRollout(SamplingBasedController):
             states = jax.tree_util.tree_map(lambda x, new: x.at[:, n*timesteps_per_stage:(n+1)*timesteps_per_stage,...].set(new),states, partial_states)
 
             # resampling indices
-            jnp_latest_state = jnp.concatenate([latest_state.qpos, latest_state.qvel],axis=1)
-            jnp_latest_state = jnp.concatenate([latest_state.xpos.reshape(latest_state.xpos.shape[0], -1), latest_state.xquat.reshape(latest_state.xquat.shape[0], -1)], axis=1)
+            # jnp_latest_state = jnp.concatenate([latest_state.qpos, latest_state.qvel],axis=1)
+            # jnp_latest_state = jnp.concatenate([latest_state.xpos.reshape(latest_state.xpos.shape[0], -1), latest_state.xquat.reshape(latest_state.xquat.shape[0], -1)], axis=1)
+            # jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
+            # jnp_var = jnp.var(jnp_latest_state, axis=0)
+            # mask = (jnp_var < 1e-12)
+            # noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
+            # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
+            # jax.debug.print("{}", jnp_latest_state[0])
+            jnp_latest_state = latest_state.xpos[:,1,0:2]
             jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
-            jnp_var = jnp.var(jnp_latest_state, axis=0)
-            mask = (jnp_var < 1e-12)
-            noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
-            jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
-            jax.debug.print("{}", jnp_latest_state[0])
 
             weight = self.state_weight
             jnp_latest_state = weight * jnp_latest_state

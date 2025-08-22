@@ -35,18 +35,24 @@ if __name__ == "__main__":
     KDE_BANDWIDTH = 0.1
 
     # DIAL specific
-    BETA_OPT_ITER = 1
-    BETA_HORIZON = 0.8
+    BETA_OPT_ITER = 0.5
+    BETA_HORIZON = 1.0
 
     # CEM specific
-    NUM_ELITES = int(NUM_SAMPLES/8)
-    SIGMA_START = NOISE_LEVEL
+    NUM_ELITES = int(NUM_SAMPLES/64)
+    SIGMA_START = NOISE_LEVEL*4
     SIGMA_MIN = NOISE_LEVEL/16
-    EXPLORE_FRACTION = 0.5
+    EXPLORE_FRACTION = 0.1
 
-    Horizon_steps = 25
-    Horizon_start = 0.8
+    # Horizon_steps = 25
+    # Horizon_start = 0.8
+    # Horizon_end = 2.0
+
+    Horizon_steps = 10
+    Horizon_start = 0.2
     Horizon_end = 2.0
+
+    NUM_TRIALS = 10
     
 
     success = np.zeros((5, Horizon_steps)) # number of controlers by horizon
@@ -57,7 +63,8 @@ if __name__ == "__main__":
     task = UPointMass()
 
     for h in tqdm(range(Horizon_steps)):
-        HORIZON = (h)*0.05 + 0.8
+        # HORIZON = (h)*0.05 + 0.8
+        HORIZON = (h+1)*0.2
 
         ctrl_list = [PredictiveSampling(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=NUM_KNOTS),
                      
@@ -87,6 +94,7 @@ if __name__ == "__main__":
                 mj_data,
                 frequency=25,
                 GOAL_THRESHOLD=0.05,
+                num_trials=NUM_TRIALS,
             )
             # num_success = h+j
             # control_freq = 0

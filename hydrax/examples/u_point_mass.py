@@ -26,7 +26,7 @@ if __name__ == "__main__":
         plan_horizon=1.0,
         spline_type="zero",
         num_knots=16,
-        kde_bandwidth=1.0,
+        kde_bandwidth=0.1,
         # state_weight=jnp.array([1,1,0])
         # state_weight=jnp.array([0,0,0, 1,1,1, 0,0,0, 0,0,0])
     )
