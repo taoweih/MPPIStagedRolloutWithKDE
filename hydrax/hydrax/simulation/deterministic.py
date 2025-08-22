@@ -451,6 +451,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
 
     # Start the simulation
     num_sucess = 0
+    total_iteration = 0
 
     number_of_iteration = 100
     number_of_trials = num_trials
@@ -547,6 +548,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
 
             if reached_goal:
                 num_sucess += 1
+                total_iteration += j
                 break
 
             # Try to run in roughly realtime
@@ -561,6 +563,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
             #     end="\r",
             # )
 
+    avg_success_iteration = 0 if num_sucess == 0 else total_iteration/num_sucess
     # Preserve the last printout
     print("")
-    return num_sucess, frequency, state_trajectories, control_trajectories
+    return num_sucess, frequency, state_trajectories, control_trajectories, avg_success_iteration
