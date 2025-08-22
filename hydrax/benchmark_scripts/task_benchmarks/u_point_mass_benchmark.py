@@ -52,7 +52,7 @@ if __name__ == "__main__":
     Horizon_start = 0.2
     Horizon_end = 2.0
 
-    NUM_TRIALS = 10
+    NUM_TRIALS = 100
     
 
     success = np.zeros((5, Horizon_steps)) # number of controlers by horizon
