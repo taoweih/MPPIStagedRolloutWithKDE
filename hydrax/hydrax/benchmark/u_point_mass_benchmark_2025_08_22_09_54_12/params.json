@@ -1,0 +1,48 @@
+{
+    "PS": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16
+    },
+    "MPPI": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16
+    },
+    "MPPI staged rollout": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16,
+        "Number of knots per stage": 4,
+        "KDE Bandwidth": 0.1
+    },
+    "DIAL": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16,
+        "Beta opt iter": 0.5,
+        "Beta horizon": 1.0
+    },
+    "CEM": {
+        "Number of samples": 512,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16,
+        "Number of elites": 8,
+        "Sigma start": 8.0,
+        "Sigma min": 0.125,
+        "Explore fraction": 0.1
+    }
+}
