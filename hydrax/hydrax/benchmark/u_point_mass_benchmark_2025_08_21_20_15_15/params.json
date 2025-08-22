@@ -1,0 +1,20 @@
+{
+    "MPPI": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16
+    },
+    "MPPI staged rollout": {
+        "Number of samples": 512,
+        "Noise level": 2.0,
+        "Temperature": 0.01,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16,
+        "Number of knots per stage": 4,
+        "KDE Bandwidth": 0.1
+    }
+}

@@ -54,6 +54,7 @@ class MPPIStagedRollout(SamplingBasedController):
         spline_type: Literal["zero", "linear", "cubic"] = "zero",
         num_knots: int = 4,
         iterations: int = 1,
+        ab_testing_flag: int = None,
     ) -> None:
         """Initialize the controller.
 
@@ -95,6 +96,8 @@ class MPPIStagedRollout(SamplingBasedController):
             self.state_weight = jnp.array([1])
         else:
             self.state_weight = state_weight
+
+        self.ab_testing_flag = ab_testing_flag
 
     def init_params(
         self, initial_knots: jax.Array = None, seed: int = 0
@@ -201,8 +204,25 @@ class MPPIStagedRollout(SamplingBasedController):
             # noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
             # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
             # jax.debug.print("{}", jnp_latest_state[0])
-            jnp_latest_state = latest_state.xpos[:,1,0:2]
-            jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
+
+            if self.ab_testing_flag == 1:
+                jnp_latest_state = latest_state.xpos[:,1,0:2]
+                jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
+            elif self.ab_testing_flag == 2:
+                jnp_latest_state = latest_state.xpos[:,1,0:3]
+                jnp_var = jnp.var(jnp_latest_state, axis=0)
+                mask = (jnp_var < 1e-12)
+                noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
+                jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
+            elif self.ab_testing_flag == 3:
+                jnp_latest_state = jnp.concatenate([latest_state.xpos[:,1,0:3], jnp.zeros_like(latest_state.xpos[:,1,0:3])],axis=1)
+                jnp_var = jnp.var(jnp_latest_state, axis=0)
+                mask = (jnp_var < 1e-12)
+                noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
+                jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
+            else:  
+                jnp_latest_state = latest_state.xpos[:,1,0:2]
+                jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
 
             weight = self.state_weight
             jnp_latest_state = weight * jnp_latest_state
