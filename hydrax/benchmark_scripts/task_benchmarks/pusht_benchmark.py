@@ -84,7 +84,7 @@ if __name__ == "__main__":
                 mj_model,
                 mj_data,
                 frequency=25,
-                GOAL_THRESHOLD=0.01,
+                GOAL_THRESHOLD=0.001,
                 mj_data_reset = mj_data_reset,
                 num_trials=10,
             )
