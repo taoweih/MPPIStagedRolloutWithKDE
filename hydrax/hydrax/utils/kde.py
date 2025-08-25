@@ -47,10 +47,9 @@ class gaussian_kde:
   neff: Any
   dataset: Any
   weights: Any
-  covariance: Any
-  inv_cov: Any
+  bandwidth: Any
 
-  def __init__(self, dataset, bw_method=None, weights=None):
+  def __init__(self, dataset, bw=None, weights=None):
     # check_arraylike("gaussian_kde", dataset)
     dataset = jnp.atleast_2d(dataset)
     if dtypes.issubdtype(lax.dtype(dataset), np.complexfloating):
@@ -76,27 +75,27 @@ class gaussian_kde:
     self._setattr("weights", weights)
     neff = self._setattr("neff", 1 / jnp.sum(weights**2))
 
-    bw_method = "scott" if bw_method is None else bw_method
-    if bw_method == "scott":
-      factor = jnp.power(neff, -1. / (d + 4))
-    elif bw_method == "silverman":
-      factor = jnp.power(neff * (d + 2) / 4.0, -1. / (d + 4))
-    elif jnp.isscalar(bw_method) and not isinstance(bw_method, str):
-      factor = bw_method
-    elif callable(bw_method):
-      factor = bw_method(self)
+    # bw_method = "scott" if bw_method is None else bw_method
+    # if bw_method == "scott":
+    #   factor = jnp.power(neff, -1. / (d + 4))
+    # elif bw_method == "silverman":
+    #   factor = jnp.power(neff * (d + 2) / 4.0, -1. / (d + 4))
+    # elif jnp.isscalar(bw_method) and not isinstance(bw_method, str):
+    #   factor = bw_method
+    # elif callable(bw_method):
+    #   factor = bw_method(self)
+    # else:
+    #   raise ValueError(
+    #       "`bw_method` should be 'scott', 'silverman', a scalar, or a callable."
+    #   )
+    
+    if jnp.isscalar(bw):
+      bandwidth = bw*jnp.ones(self.d)
     else:
-      raise ValueError(
-          "`bw_method` should be 'scott', 'silverman', a scalar, or a callable."
-      )
+      assert bw.shape[0] == self.d, "bw dimension has to match"
+      bandwidth = bw
 
-    data_covariance = jnp.atleast_2d(
-        jnp.cov(dataset, rowvar=1, bias=False, aweights=weights))
-    data_inv_cov = jnp.linalg.inv(data_covariance)
-    covariance = data_covariance * factor**2
-    inv_cov = data_inv_cov / factor**2
-    self._setattr("covariance", covariance)
-    self._setattr("inv_cov", inv_cov)
+    self._setattr("bandwidth", bandwidth)
 
   def _setattr(self, name, value):
     # Frozen dataclasses don't support setting attributes so we have to
@@ -105,8 +104,7 @@ class gaussian_kde:
     return value
 
   def tree_flatten(self):
-    return ((self.neff, self.dataset, self.weights, self.covariance,
-             self.inv_cov), None)
+    return ((self.neff, self.dataset, self.weights, self.bandwidth), None)
 
   @classmethod
   def tree_unflatten(cls, aux_data, children):
@@ -115,8 +113,7 @@ class gaussian_kde:
     kde._setattr("neff", children[0])
     kde._setattr("dataset", children[1])
     kde._setattr("weights", children[2])
-    kde._setattr("covariance", children[3])
-    kde._setattr("inv_cov", children[4])
+    kde._setattr("bandwidth", children[3])
     return kde
 
   @property
@@ -132,7 +129,7 @@ class gaussian_kde:
     # check_arraylike("evaluate", points)
     points = self._reshape_points(points)
     result = _gaussian_kernel_eval(False, self.dataset.T, self.weights[:, None],
-                                   points.T, self.inv_cov)
+                                   points.T, self.bandwidth)
     return result[:, 0]
 
   def __call__(self, points):
@@ -181,26 +178,26 @@ class gaussian_kde:
                       in_axes=1)(sm.dataset)
     return jnp.sum(result * sm.weights)
 
-  def resample(self, key, shape=()):
-    r"""Randomly sample a dataset from the estimated pdf
+  # def resample(self, key, shape=()):
+  #   r"""Randomly sample a dataset from the estimated pdf
 
-    Args:
-      key: a PRNG key used as the random key.
-      shape: optional, a tuple of nonnegative integers specifying the result
-        batch shape; that is, the prefix of the result shape excluding the last
-        axis.
+  #   Args:
+  #     key: a PRNG key used as the random key.
+  #     shape: optional, a tuple of nonnegative integers specifying the result
+  #       batch shape; that is, the prefix of the result shape excluding the last
+  #       axis.
 
-    Returns:
-      The resampled dataset as an array with shape `(d,) + shape`.
-    """
-    ind_key, eps_key = random.split(key)
-    ind = random.choice(ind_key, self.n, shape=shape, p=self.weights)
-    eps = random.multivariate_normal(eps_key,
-                                     jnp.zeros(self.d, self.covariance.dtype),
-                                     self.covariance,
-                                     shape=shape,
-                                     dtype=self.dataset.dtype).T
-    return self.dataset[:, ind] + eps
+  #   Returns:
+  #     The resampled dataset as an array with shape `(d,) + shape`.
+  #   """
+  #   ind_key, eps_key = random.split(key)
+  #   ind = random.choice(ind_key, self.n, shape=shape, p=self.weights)
+  #   eps = random.multivariate_normal(eps_key,
+  #                                    jnp.zeros(self.d, self.covariance.dtype),
+  #                                    self.covariance,
+  #                                    shape=shape,
+  #                                    dtype=self.dataset.dtype).T
+  #   return self.dataset[:, ind] + eps
 
   def pdf(self, x):
     """Probability density function"""
@@ -211,7 +208,7 @@ class gaussian_kde:
     # check_arraylike("logpdf", x)
     x = self._reshape_points(x)
     result = _gaussian_kernel_eval(True, self.dataset.T, self.weights[:, None],
-                                   x.T, self.inv_cov)
+                                   x.T, self.bandwidth)
     return result[:, 0]
 
   def integrate_box(self, low_bounds, high_bounds, maxpts=None):
@@ -250,24 +247,27 @@ def _gaussian_kernel_convolve(chol, norm, target, weights, mean):
 
 
 @partial(jax.jit, static_argnums=0)
-def _gaussian_kernel_eval(in_log, points, values, xi, precision):
+def _gaussian_kernel_eval(in_log, points, values, xi, bandwidth):
 #   points, values, xi, precision = promote_dtypes_inexact(
 #       points, values, xi, precision)
   d = points.shape[1]
 
   if xi.shape[1] != d:
     raise ValueError("points and xi must have same trailing dim")
-  if precision.shape != (d, d):
-    raise ValueError("precision matrix must match data dims")
+  # if precision.shape != (d, d):
+  #   raise ValueError("precision matrix must match data dims")
 
-  whitening = linalg.cholesky(precision, lower=True)
-  points = jnp.dot(points, whitening)
-  xi = jnp.dot(xi, whitening)
-  log_norm = jnp.sum(jnp.log(
-      jnp.diag(whitening))) - 0.5 * d * jnp.log(2 * np.pi)
+  # whitening = linalg.cholesky(precision, lower=True)
+  # points = jnp.dot(points, whitening)
+  # xi = jnp.dot(xi, whitening)
+  # log_norm = jnp.sum(jnp.log(
+  #     jnp.diag(whitening))) - 0.5 * d * jnp.log(2 * np.pi)
+  
+  log_norm = jnp.sum(- jnp.log(
+    bandwidth)) - 0.5 * d * jnp.log(2 * np.pi)
 
   def kernel(x_test, x_train, y_train):
-    arg = log_norm - 0.5 * jnp.sum(jnp.square(x_train - x_test))
+    arg = log_norm - 0.5 * jnp.sum(jnp.square(x_train - x_test)/jnp.square(bandwidth))
     if in_log:
       return jnp.log(y_train) + arg
     else:
