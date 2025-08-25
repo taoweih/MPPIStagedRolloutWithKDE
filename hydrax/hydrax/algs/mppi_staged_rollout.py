@@ -3,7 +3,8 @@ from typing import Literal, Tuple
 import jax
 import jax.numpy as jnp
 import math
-from jax.scipy.stats import gaussian_kde
+# from jax.scipy.stats import gaussian_kde
+from hydrax.utils.kde import gaussian_kde
 import numpy as np
 
 from flax.struct import dataclass
@@ -226,7 +227,7 @@ class MPPIStagedRollout(SamplingBasedController):
 
             weight = self.state_weight
             jnp_latest_state = weight * jnp_latest_state
-            kde = gaussian_kde(jnp_latest_state.T,bw_method=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
+            kde = gaussian_kde(jnp_latest_state.T,bw=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
 
             p_x = kde.pdf(jnp_latest_state.T)
             # jax.debug.print("{}", p_x)
