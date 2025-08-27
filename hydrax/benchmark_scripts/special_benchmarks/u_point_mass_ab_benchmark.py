@@ -42,7 +42,7 @@ if __name__ == "__main__":
     Horizon_start = 0.2
     Horizon_end = 2.0
 
-    NUM_TRIALS = 100
+    NUM_TRIALS = 10
     
 
     success = np.zeros((4, Horizon_steps)) # number of controlers by horizon
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
             mj_data = mujoco.MjData(mj_model)
 
-            num_success, control_freq, state_trajectory, control_trajectory = run_benchmark(
+            num_success, control_freq, state_trajectory, control_trajectory, _ = run_benchmark(
                 ctrl,
                 mj_model,
                 mj_data,
