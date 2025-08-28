@@ -16,6 +16,7 @@ from hydrax.alg_base import SamplingBasedController, SamplingParams, Trajectory
 from hydrax.risk import RiskStrategy
 from hydrax.task_base import Task
 
+from typing import Callable, Optional
 
 @dataclass
 class MPPIStagedRolloutParams(SamplingParams):
@@ -33,12 +34,10 @@ class MPPIStagedRolloutParams(SamplingParams):
 class MPPIStagedRollout(SamplingBasedController):
     """Model-predictive path integral control.
 
-    Implements "MPPI-generic" as described in https://arxiv.org/abs/2409.07563.
-    Unlike the original MPPI derivation, this does not assume stochastic,
-    control-affine dynamics or a separable cost function that is quadratic in
-    control.
-    """
+    Addition to MPPI algorithm by sampling state space during rollout and encourage 
+    diverse state space exploration
 
+    """
     def __init__(
         self,
         task: Task,
@@ -47,7 +46,7 @@ class MPPIStagedRollout(SamplingBasedController):
         temperature: float,
         num_knots_per_stage: int = 4,
         kde_bandwidth: float = 1.0,
-        state_weight: jnp.array = None,
+        state_weight: jax.Array = None,
         num_randomizations: int = 1,
         risk_strategy: RiskStrategy = None,
         seed: int = 0,
@@ -55,6 +54,7 @@ class MPPIStagedRollout(SamplingBasedController):
         spline_type: Literal["zero", "linear", "cubic"] = "zero",
         num_knots: int = 4,
         iterations: int = 1,
+        state_selection_function: Optional[Callable[[mjx.Data], jax.Array]] = None,
         ab_testing_flag: int = None,
     ) -> None:
         """Initialize the controller.
@@ -74,6 +74,8 @@ class MPPIStagedRollout(SamplingBasedController):
                          Defaults to "zero" (zero-order hold).
             num_knots: The number of knots in the control spline.
             iterations: The number of optimization iterations to perform.
+            state_selection_function: Function used to select which data from mjx.Data is used in density estimation
+            ab_testing_flag: Temporary flag for testing
         """
         super().__init__(
             task,
@@ -93,12 +95,19 @@ class MPPIStagedRollout(SamplingBasedController):
 
         self.num_knots_per_stage = num_knots_per_stage
         self.kde_bandwidth = kde_bandwidth
+
         if state_weight is None:
             self.state_weight = jnp.array([1])
         else:
             self.state_weight = state_weight
 
+        if state_selection_function is None:
+            self.state_selection_function = lambda data: data.qpos
+        else:
+            self.state_selection_function = state_selection_function
+
         self.ab_testing_flag = ab_testing_flag
+
 
     def init_params(
         self, initial_knots: jax.Array = None, seed: int = 0
@@ -173,7 +182,7 @@ class MPPIStagedRollout(SamplingBasedController):
             )
             return final_state, (states, costs, trace_sites)
         
-        #### TODO rollout and resample start ####
+        #### rollout and resample start ####
 
         ## Initilize full states and costs that will be updated after each stage
         states = jax.tree_util.tree_map(lambda x: jnp.zeros((self.num_samples, self.ctrl_steps)+x.shape, dtype=x.dtype),state)
@@ -187,7 +196,6 @@ class MPPIStagedRollout(SamplingBasedController):
         # batch init state 
         curr_state = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
 
-
         for n in range(num_stages-1):
             # partial rollout
             partial_controls = controls[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage,:]
@@ -197,40 +205,33 @@ class MPPIStagedRollout(SamplingBasedController):
             states = jax.tree_util.tree_map(lambda x, new: x.at[:, n*timesteps_per_stage:(n+1)*timesteps_per_stage,...].set(new),states, partial_states)
 
             # resampling indices
-            # jnp_latest_state = jnp.concatenate([latest_state.qpos, latest_state.qvel],axis=1)
-            # jnp_latest_state = jnp.concatenate([latest_state.xpos.reshape(latest_state.xpos.shape[0], -1), latest_state.xquat.reshape(latest_state.xquat.shape[0], -1)], axis=1)
-            # jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
-            # jnp_var = jnp.var(jnp_latest_state, axis=0)
-            # mask = (jnp_var < 1e-12)
-            # noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
-            # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
-            # jax.debug.print("{}", jnp_latest_state[0])
 
-            if self.ab_testing_flag == 1:
-                jnp_latest_state = latest_state.xpos[:,1,0:2]
-                jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
-            elif self.ab_testing_flag == 2:
-                jnp_latest_state = latest_state.xpos[:,1,0:3]
-                jnp_var = jnp.var(jnp_latest_state, axis=0)
-                mask = (jnp_var < 1e-12)
-                noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
-                # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
-            elif self.ab_testing_flag == 3:
-                jnp_latest_state = jnp.concatenate([latest_state.xpos[:,1,0:3], jnp.zeros_like(latest_state.xpos[:,1,0:3])],axis=1)
-                jnp_var = jnp.var(jnp_latest_state, axis=0)
-                mask = (jnp_var < 1e-12)
-                noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
-                # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
-            else:  
-                jnp_latest_state = latest_state.xpos[:,1,0:2]
-                jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
+            jnp_latest_state = self.state_selection_function(latest_state)
+
+            # if self.ab_testing_flag == 1:
+            #     jnp_latest_state = latest_state.xpos[:,1,0:2]
+            #     jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
+            # elif self.ab_testing_flag == 2:
+            #     jnp_latest_state = latest_state.xpos[:,1,0:3]
+            #     jnp_var = jnp.var(jnp_latest_state, axis=0)
+            #     mask = (jnp_var < 1e-12)
+            #     noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
+            #     # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
+            # elif self.ab_testing_flag == 3:
+            #     jnp_latest_state = jnp.concatenate([latest_state.xpos[:,1,0:3], jnp.zeros_like(latest_state.xpos[:,1,0:3])],axis=1)
+            #     jnp_var = jnp.var(jnp_latest_state, axis=0)
+            #     mask = (jnp_var < 1e-12)
+            #     noise = 1e-6 * jax.random.normal(jax.random.PRNGKey(0), jnp_latest_state.shape) * mask
+            #     # jnp_latest_state = jnp_latest_state + noise # add noise to prevent NaN in kde
+            # else:  
+            #     jnp_latest_state = latest_state.xpos[:,1,0:2]
+            #     jnp_latest_state = jnp_latest_state.reshape(jnp_latest_state.shape[0], -1)
 
             weight = self.state_weight
             jnp_latest_state = weight * jnp_latest_state
             kde = gaussian_kde(jnp_latest_state.T,bw=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
 
             p_x = kde.pdf(jnp_latest_state.T)
-            # jax.debug.print("{}", p_x)
             epsilon = 1e-6
             inv_px = (1.0 / p_x + epsilon)
             inv_px = inv_px / inv_px.sum()
@@ -272,11 +273,6 @@ class MPPIStagedRollout(SamplingBasedController):
 
         costs = jnp.append(costs, final_cost[:,None], axis=1)
         trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
-        
-        # jax.debug.print(f"states shape:{states.qpos.shape}\r")
-        # jax.debug.print(f"controls shape:{controls.shape}\r")
-        # jax.debug.print(f"knots shape:{knots.shape}\r")
-        # jax.debug.print(f"costs shape:{costs.shape}\r")
 
         return states, Trajectory(
             controls=controls,

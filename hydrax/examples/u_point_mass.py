@@ -4,10 +4,11 @@ import mujoco
 import jax
 import jax.numpy as jnp
 
+from mujoco import mjx
+
 from hydrax.algs import MPPI, MPPIStagedRollout
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.u_point_mass import UPointMass
-
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
@@ -16,6 +17,12 @@ if __name__ == "__main__":
     # Define the task (cost and dynamics)
     task = UPointMass()
 
+    def state_selection_function(state: mjx.Data) -> jax.Array:
+        jnp_state = state.xpos[:,1,0:2]
+        jnp_state = jnp_state.reshape(jnp_state.shape[0], -1)
+        return jnp_state
+
+
     # Set up the controller
     ctrl = MPPIStagedRollout(
         task,
@@ -23,12 +30,12 @@ if __name__ == "__main__":
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=1.0,
+        plan_horizon=1.5,
         spline_type="zero",
         num_knots=16,
         kde_bandwidth=0.1,
         # state_weight=jnp.array([1,1,0])
-        # state_weight=jnp.array([0,0,0, 1,1,1, 0,0,0, 0,0,0])
+        state_selection_function= state_selection_function,
     )
 
     # Define the model used for simulation
