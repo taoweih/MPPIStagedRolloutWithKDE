@@ -19,38 +19,170 @@ from ray import tune
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
+    special_name = "autotune_test"
+
+    task = UPointMass()
+    goal_threshold = 0.05
+
+    tune_horizon = 1.4
+    tune_cpu_num = 3
+    tune_gpu_num = 0
     # common non-tunable parameters
     NUM_SAMPLES = 512
     NUM_KNOTS = 16
     SPLINE_TYPE = "zero"
 
+    # tune PS
+    def objective(config):  
+        ctrl = PredictiveSampling(task,num_samples=NUM_SAMPLES,noise_level=config["noise_level"]
+                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
+        mj_model = task.mj_model
+        mj_model.opt.timestep = 0.01
+        mj_data = mujoco.MjData(mj_model)
+        num_success, _, _, _, _ = run_benchmark(
+                ctrl,
+                mj_model,
+                mj_data,
+                frequency=25,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=10,
+            ) 
+        return {"score": num_success}
+
+    search_space = { 
+        "noise_level": tune.uniform(0, 4),
+    }
+
+    tuner = tune.Tuner(tune.with_resources(objective, {"cpu": tune_cpu_num, "gpu": tune_gpu_num}), param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
+    results = tuner.fit()
+
     # common tunable parameters
-    NOISE_LEVEL = 2.0
+    NOISE_LEVEL = results.get_best_result().config["noise_level"]
+
+    # tune mppi
+    def objective(config):  
+        ctrl = MPPI(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=config["temperature"]
+                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
+        mj_model = task.mj_model
+        mj_model.opt.timestep = 0.01
+        mj_data = mujoco.MjData(mj_model)
+        num_success, _, _, _, _ = run_benchmark(
+                ctrl,
+                mj_model,
+                mj_data,
+                frequency=25,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=10,
+            ) 
+        return {"score": num_success}
+
+    search_space = { 
+        "temperature": tune.uniform(0, 1),
+    }
+
+    tuner = tune.Tuner(tune.with_resources(objective, {"cpu": tune_cpu_num, "gpu": tune_gpu_num}), param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
+    results = tuner.fit()
 
     # MPPI specific
-    TEMPERATURE = 0.01
+    TEMPERATURE = results.get_best_result().config["temperature"]
+
+    # tune mppi staged rollout
+    def objective(config):  
+        ctrl = MPPIStagedRollout(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=TEMPERATURE, kde_bandwidth=config["kde_bandwidth"]
+                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
+        mj_model = task.mj_model
+        mj_model.opt.timestep = 0.01
+        mj_data = mujoco.MjData(mj_model)
+        num_success, _, _, _, _ = run_benchmark(
+                ctrl,
+                mj_model,
+                mj_data,
+                frequency=25,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=10,
+            ) 
+        return {"score": num_success}
+
+    search_space = { 
+        "kde_bandwidth": tune.uniform(0, 1),
+    }
+
+    tuner = tune.Tuner(tune.with_resources(objective, {"cpu": tune_cpu_num, "gpu": tune_gpu_num}), param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
+    results = tuner.fit()
 
     # MPPI staged rollout specific
     NUM_KNOTS_PER_STAGE = 4
-    KDE_BANDWIDTH = 0.1
+    KDE_BANDWIDTH = results.get_best_result().config["kde_bandwidth"]
+
+    # tune DIAL MPC
+    def objective(config):  
+        ctrl = DIAL(task,num_samples=NUM_SAMPLES,noise_level=NOISE_LEVEL, temperature=TEMPERATURE, beta_horizon=config["beta_horizon"], beta_opt_iter=config["beta_opt_iter"]
+                            ,plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
+        mj_model = task.mj_model
+        mj_model.opt.timestep = 0.01
+        mj_data = mujoco.MjData(mj_model)
+        num_success, _, _, _, _ = run_benchmark(
+                ctrl,
+                mj_model,
+                mj_data,
+                frequency=25,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=10,
+            ) 
+        return {"score": num_success}
+
+    search_space = { 
+        "beta_horizon": tune.uniform(0, 2),
+        "beta_opt_iter": tune.uniform(0, 2),
+    }
+
+    tuner = tune.Tuner(tune.with_resources(objective, {"cpu": tune_cpu_num, "gpu": tune_gpu_num}), param_space=search_space, tune_config= tune.TuneConfig(num_samples=10, metric="score", mode="max")) 
+    results = tuner.fit()
 
     # DIAL specific
-    BETA_OPT_ITER = 0.5
-    BETA_HORIZON = 1.0
+    BETA_OPT_ITER = results.get_best_result().config["beta_opt_iter"]
+    BETA_HORIZON = results.get_best_result().config["beta_horizon"]
+
+    # tune CEM
+    def objective(config):  
+        ctrl = CEM(task,num_samples=NUM_SAMPLES, explore_fraction=config["explore_fraction"], 
+                   num_elites=config["num_elites"], sigma_start=config["sigma_start"], sigma_min=config["sigma_min"], plan_horizon=tune_horizon,spline_type=SPLINE_TYPE,num_knots=NUM_KNOTS)
+        mj_model = task.mj_model
+        mj_model.opt.timestep = 0.01
+        mj_data = mujoco.MjData(mj_model)
+        num_success, _, _, _,_ = run_benchmark(
+                ctrl,
+                mj_model,
+                mj_data,
+                frequency=25,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=10,
+            ) 
+        return {"score": num_success}
+
+    search_space = { 
+        "explore_fraction": tune.uniform(0, 1),
+        "sigma_start": tune.uniform(NOISE_LEVEL, NOISE_LEVEL*8),
+        "sigma_min": tune.uniform(NOISE_LEVEL/32, NOISE_LEVEL/2),
+        "num_elites": tune.randint(int(NUM_SAMPLES/256), int(NUM_SAMPLES/8))
+    }
+
+    tuner = tune.Tuner(tune.with_resources(objective, {"cpu": tune_cpu_num, "gpu": tune_gpu_num}), param_space=search_space, tune_config= tune.TuneConfig(num_samples=100, metric="score", mode="max")) 
+    results = tuner.fit()
 
     # CEM specific
-    NUM_ELITES = int(NUM_SAMPLES/64)
-    SIGMA_START = NOISE_LEVEL*4
-    SIGMA_MIN = NOISE_LEVEL/16
-    EXPLORE_FRACTION = 0.1
+    NUM_ELITES = results.get_best_result().config["num_elites"]
+    SIGMA_START = results.get_best_result().config["sigma_start"]
+    SIGMA_MIN = results.get_best_result().config["sigma_min"]
+    EXPLORE_FRACTION = results.get_best_result().config["explore_fraction"]
 
-    # Horizon_steps = 25
-    # Horizon_start = 0.8
-    # Horizon_end = 2.0
-
-    Horizon_steps = 10
-    Horizon_start = 0.2
+    Horizon_steps = 25
+    Horizon_start = 0.8
     Horizon_end = 2.0
+
+    # Horizon_steps = 10
+    # Horizon_start = 0.2
+    # Horizon_end = 2.0
 
     NUM_TRIALS = 10
     
@@ -61,11 +193,9 @@ if __name__ == "__main__":
     all_state_trajectory = [[],[],[],[],[]] # number of controllers by horizon by number of iteration by number of trials by qpos shape
     all_control_trajectory = [[],[],[],[],[]]
 
-    task = UPointMass()
-
     for h in tqdm(range(Horizon_steps)):
-        # HORIZON = (h)*0.05 + 0.8
-        HORIZON = (h+1)*0.2
+        HORIZON = (h)*0.05 + 0.8
+        # HORIZON = (h+1)*0.2
 
         ctrl_list = [PredictiveSampling(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=NUM_KNOTS),
                      
@@ -94,7 +224,7 @@ if __name__ == "__main__":
                 mj_model,
                 mj_data,
                 frequency=25,
-                GOAL_THRESHOLD=0.05,
+                GOAL_THRESHOLD=goal_threshold,
                 num_trials=NUM_TRIALS,
             )
 
@@ -112,7 +242,7 @@ if __name__ == "__main__":
 
     #params
     curr_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    save_dir = Path(ROOT)/"benchmark"/f"u_point_mass_benchmark_{curr_time}"
+    save_dir = Path(ROOT)/"benchmark"/f"u_point_mass_benchmark_{special_name}_{curr_time}"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = os.path.join(save_dir, "params.json")
@@ -155,6 +285,7 @@ if __name__ == "__main__":
         },
         "CEM": {
             "Number of samples": NUM_SAMPLES,
+            "Temperature": TEMPERATURE,
             "Horizon (s)": HORIZON,
             "Spline type": SPLINE_TYPE,
             "Number of knots": NUM_KNOTS,

@@ -74,20 +74,6 @@ class gaussian_kde:
     self._setattr("dataset", dataset)
     self._setattr("weights", weights)
     neff = self._setattr("neff", 1 / jnp.sum(weights**2))
-
-    # bw_method = "scott" if bw_method is None else bw_method
-    # if bw_method == "scott":
-    #   factor = jnp.power(neff, -1. / (d + 4))
-    # elif bw_method == "silverman":
-    #   factor = jnp.power(neff * (d + 2) / 4.0, -1. / (d + 4))
-    # elif jnp.isscalar(bw_method) and not isinstance(bw_method, str):
-    #   factor = bw_method
-    # elif callable(bw_method):
-    #   factor = bw_method(self)
-    # else:
-    #   raise ValueError(
-    #       "`bw_method` should be 'scott', 'silverman', a scalar, or a callable."
-    #   )
     
     if jnp.isscalar(bw):
       bandwidth = bw*jnp.ones(self.d)
@@ -135,48 +121,48 @@ class gaussian_kde:
   def __call__(self, points):
     return self.evaluate(points)
 
-  def integrate_gaussian(self, mean, cov):
-    """Integrate the distribution weighted by a Gaussian."""
-    mean = jnp.atleast_1d(jnp.squeeze(mean))
-    cov = jnp.atleast_2d(cov)
+  # def integrate_gaussian(self, mean, cov):
+  #   """Integrate the distribution weighted by a Gaussian."""
+  #   mean = jnp.atleast_1d(jnp.squeeze(mean))
+  #   cov = jnp.atleast_2d(cov)
 
-    if mean.shape != (self.d,):
-      raise ValueError(f"mean does not have dimension {self.d}")
-    if cov.shape != (self.d, self.d):
-      raise ValueError(f"covariance does not have dimension {self.d}")
+  #   if mean.shape != (self.d,):
+  #     raise ValueError(f"mean does not have dimension {self.d}")
+  #   if cov.shape != (self.d, self.d):
+  #     raise ValueError(f"covariance does not have dimension {self.d}")
 
-    chol = linalg.cho_factor(self.covariance + cov)
-    norm = jnp.sqrt(2 * np.pi)**self.d * jnp.prod(jnp.diag(chol[0]))
-    norm = 1.0 / norm
-    return _gaussian_kernel_convolve(chol, norm, self.dataset, self.weights,
-                                     mean)
+  #   chol = linalg.cho_factor(self.covariance + cov)
+  #   norm = jnp.sqrt(2 * np.pi)**self.d * jnp.prod(jnp.diag(chol[0]))
+  #   norm = 1.0 / norm
+  #   return _gaussian_kernel_convolve(chol, norm, self.dataset, self.weights,
+  #                                    mean)
 
-  def integrate_box_1d(self, low, high):
-    """Integrate the distribution over the given limits."""
-    if self.d != 1:
-      raise ValueError("integrate_box_1d() only handles 1D pdfs")
-    if np.ndim(low) != 0 or np.ndim(high) != 0:
-      raise ValueError(
-          "the limits of integration in integrate_box_1d must be scalars")
-    sigma = jnp.squeeze(jnp.sqrt(self.covariance))
-    low = jnp.squeeze((low - self.dataset) / sigma)
-    high = jnp.squeeze((high - self.dataset) / sigma)
-    return jnp.sum(self.weights * (special.ndtr(high) - special.ndtr(low)))
+  # def integrate_box_1d(self, low, high):
+  #   """Integrate the distribution over the given limits."""
+  #   if self.d != 1:
+  #     raise ValueError("integrate_box_1d() only handles 1D pdfs")
+  #   if np.ndim(low) != 0 or np.ndim(high) != 0:
+  #     raise ValueError(
+  #         "the limits of integration in integrate_box_1d must be scalars")
+  #   sigma = jnp.squeeze(jnp.sqrt(self.covariance))
+  #   low = jnp.squeeze((low - self.dataset) / sigma)
+  #   high = jnp.squeeze((high - self.dataset) / sigma)
+  #   return jnp.sum(self.weights * (special.ndtr(high) - special.ndtr(low)))
 
-  def integrate_kde(self, other):
-    """Integrate the product of two Gaussian KDE distributions."""
-    if other.d != self.d:
-      raise ValueError("KDEs are not the same dimensionality")
+  # def integrate_kde(self, other):
+  #   """Integrate the product of two Gaussian KDE distributions."""
+  #   if other.d != self.d:
+  #     raise ValueError("KDEs are not the same dimensionality")
 
-    chol = linalg.cho_factor(self.covariance + other.covariance)
-    norm = jnp.sqrt(2 * np.pi)**self.d * jnp.prod(jnp.diag(chol[0]))
-    norm = 1.0 / norm
+  #   chol = linalg.cho_factor(self.covariance + other.covariance)
+  #   norm = jnp.sqrt(2 * np.pi)**self.d * jnp.prod(jnp.diag(chol[0]))
+  #   norm = 1.0 / norm
 
-    sm, lg = (self, other) if self.n < other.n else (other, self)
-    result = jax.vmap(partial(_gaussian_kernel_convolve, chol, norm, lg.dataset,
-                              lg.weights),
-                      in_axes=1)(sm.dataset)
-    return jnp.sum(result * sm.weights)
+  #   sm, lg = (self, other) if self.n < other.n else (other, self)
+  #   result = jax.vmap(partial(_gaussian_kernel_convolve, chol, norm, lg.dataset,
+  #                             lg.weights),
+  #                     in_axes=1)(sm.dataset)
+  #   return jnp.sum(result * sm.weights)
 
   # def resample(self, key, shape=()):
   #   r"""Randomly sample a dataset from the estimated pdf
@@ -239,11 +225,11 @@ class gaussian_kde:
     return points
 
 
-def _gaussian_kernel_convolve(chol, norm, target, weights, mean):
-  diff = target - mean[:, None]
-  alpha = linalg.cho_solve(chol, diff)
-  arg = 0.5 * jnp.sum(diff * alpha, axis=0)
-  return norm * jnp.sum(jnp.exp(-arg) * weights)
+# def _gaussian_kernel_convolve(chol, norm, target, weights, mean):
+#   diff = target - mean[:, None]
+#   alpha = linalg.cho_solve(chol, diff)
+#   arg = 0.5 * jnp.sum(diff * alpha, axis=0)
+#   return norm * jnp.sum(jnp.exp(-arg) * weights)
 
 
 @partial(jax.jit, static_argnums=0)
@@ -254,14 +240,6 @@ def _gaussian_kernel_eval(in_log, points, values, xi, bandwidth):
 
   if xi.shape[1] != d:
     raise ValueError("points and xi must have same trailing dim")
-  # if precision.shape != (d, d):
-  #   raise ValueError("precision matrix must match data dims")
-
-  # whitening = linalg.cholesky(precision, lower=True)
-  # points = jnp.dot(points, whitening)
-  # xi = jnp.dot(xi, whitening)
-  # log_norm = jnp.sum(jnp.log(
-  #     jnp.diag(whitening))) - 0.5 * d * jnp.log(2 * np.pi)
   
   log_norm = jnp.sum(- jnp.log(
     bandwidth)) - 0.5 * d * jnp.log(2 * np.pi)

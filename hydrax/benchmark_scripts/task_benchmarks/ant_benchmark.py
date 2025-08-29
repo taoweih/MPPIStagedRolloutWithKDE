@@ -19,6 +19,7 @@ from ray import tune
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
+    goal_threshold = 1
     # common non-tunable parameters
     NUM_SAMPLES = 512
     NUM_KNOTS = 16
@@ -32,24 +33,31 @@ if __name__ == "__main__":
 
     # MPPI staged rollout specific
     NUM_KNOTS_PER_STAGE = 4
-    KDE_BANDWIDTH = 1.0
+    KDE_BANDWIDTH = 0.1
 
     # DIAL specific
-    BETA_OPT_ITER = 1
-    BETA_HORIZON = 0.8
+    BETA_OPT_ITER = 0.5
+    BETA_HORIZON = 1.0
 
     # CEM specific
-    NUM_ELITES = int(NUM_SAMPLES/8)
-    SIGMA_START = NOISE_LEVEL
+    NUM_ELITES = int(NUM_SAMPLES/64)
+    SIGMA_START = NOISE_LEVEL*4
     SIGMA_MIN = NOISE_LEVEL/16
-    EXPLORE_FRACTION = 0.5
+    EXPLORE_FRACTION = 0.1
 
-    Horizon_steps = 10
+    # Horizon_steps = 25
+    # Horizon_start = 0.8
+    # Horizon_end = 2.0
+
+    Horizon_steps = 9
     Horizon_start = 0.2
-    Horizon_end = 2.0
+    Horizon_end = 1.0
+
+    NUM_TRIALS = 10
     
 
     success = np.zeros((5, Horizon_steps)) # number of controlers by horizon
+    success_iteration = np.zeros((5,Horizon_steps))
     all_frequency = np.zeros((5, Horizon_steps))
     all_state_trajectory = [[],[],[],[],[]] # number of controllers by horizon by number of iteration by number of trials by qpos shape
     all_control_trajectory = [[],[],[],[],[]]
@@ -57,7 +65,8 @@ if __name__ == "__main__":
     task = Ant()
 
     for h in tqdm(range(Horizon_steps)):
-        HORIZON = (h+1)*0.2#05 + 0.8
+        # HORIZON = (h)*0.05 + 0.8
+        HORIZON = (h+1)*0.1 + 0.1
 
         ctrl_list = [PredictiveSampling(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=NUM_KNOTS),
                      
@@ -81,19 +90,22 @@ if __name__ == "__main__":
 
             mj_data = mujoco.MjData(mj_model)
 
-            num_success, control_freq, state_trajectory, control_trajectory = run_benchmark(
+            num_success, control_freq, state_trajectory, control_trajectory, avg_success_iteration = run_benchmark(
                 ctrl,
                 mj_model,
                 mj_data,
                 frequency=25,
-                GOAL_THRESHOLD=5,
-                num_trials=100,
+                GOAL_THRESHOLD=goal_threshold,
+                num_trials=NUM_TRIALS,
             )
+
             # num_success = h+j
             # control_freq = 0
             # state_trajectory = 0
             # control_trajectory = 0
+            # avg_success_iteration = h+j
 
+            success_iteration[j, h] = avg_success_iteration
             success[j, h] = num_success
             all_frequency[j, h] = control_freq
             all_state_trajectory[j].append(state_trajectory)
@@ -144,7 +156,6 @@ if __name__ == "__main__":
         },
         "CEM": {
             "Number of samples": NUM_SAMPLES,
-            "Temperature": TEMPERATURE,
             "Horizon (s)": HORIZON,
             "Spline type": SPLINE_TYPE,
             "Number of knots": NUM_KNOTS,
@@ -181,7 +192,7 @@ if __name__ == "__main__":
 
 
     # sucess rate
-    file_path = os.path.join(save_dir, "sucess_count.csv")
+    file_path = os.path.join(save_dir, "success_count.csv")
     np.savetxt(file_path, (success).astype(int), delimiter=",",fmt="%d")
 
     plt.figure()
@@ -192,5 +203,19 @@ if __name__ == "__main__":
     plt.ylabel("Sucess Rate (%)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_dir / f"task_{type(task).__name__}.png", dpi=300)
+    plt.savefig(save_dir / f"success_count.png", dpi=300)
+    plt.close()
+
+    file_path = os.path.join(save_dir, "sucess_iteration.csv")
+    np.savetxt(file_path, (success_iteration).astype(int), delimiter=",",fmt="%d")
+
+    plt.figure()
+    for j in range(success.shape[0]):
+        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), success_iteration[j], label=type(ctrl_list[j]).__name__)
+    plt.title(f'Task {type(task).__name__}')
+    plt.xlabel("Horizon (seconds)")
+    plt.ylabel("Average success iteration")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_dir / f"success_iteration.png", dpi=300)
     plt.close()
