@@ -22,6 +22,46 @@ import copy
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
 """
+def _sync_tree(x):
+    return jax.tree_util.tree_map(
+        lambda a: a.block_until_ready() if hasattr(a, "block_until_ready") else a, x
+    )
+
+def bench_planner(controller, mj_model, mj_data, initial_knots=None, reps=50):
+    # Use the SAME MJX model the controller uses (float32)
+    mjx_model = controller.task.model
+    mjx_data  = mjx.make_data(mjx_model)
+
+    # JIT with donation to cut copies
+    compiled_opt = jax.jit(controller.optimize, donate_argnums=(0,1))
+
+    # Init params
+    params = controller.init_params(initial_knots=initial_knots)
+
+    # Warmup (compile)
+    params, payload = compiled_opt(mjx_data, params)
+    params, payload = compiled_opt(mjx_data, params)
+    _sync_tree(params)  # ensure compiled
+
+    # Build a fixed-length tq template once (avoid retracing elsewhere)
+    # (Not used here, but you can keep for parity with your loop)
+    # sim_steps_per_replan = int((1.0 / 25.0) / mj_model.opt.timestep)  # example
+    # tq_template = jnp.arange(sim_steps_per_replan, dtype=jnp.float32) * jnp.float32(mj_model.opt.timestep)
+
+    # Tight loop: update mjx_data from current mj_data, plan, sync, repeat
+    t0 = time.time()
+    for _ in range(reps):
+        mjx_data = mjx_data.replace(
+            qpos=jnp.asarray(mj_data.qpos, dtype=jnp.float32),
+            qvel=jnp.asarray(mj_data.qvel, dtype=jnp.float32),
+            mocap_pos=jnp.asarray(mj_data.mocap_pos, dtype=jnp.float32),
+            mocap_quat=jnp.asarray(mj_data.mocap_quat, dtype=jnp.float32),
+            time=jnp.float32(mj_data.time),
+        )
+        params, payload = compiled_opt(mjx_data, params)
+        _sync_tree(params)  # force device-side finish for truthful timing
+    elapsed = time.time() - t0
+    print(f"planner avg: {elapsed/reps*1000:.2f} ms  ({reps/elapsed:.1f} Hz)")
 
 
 def run_interactive(  # noqa: PLR0912, PLR0915
@@ -85,8 +125,11 @@ def run_interactive(  # noqa: PLR0912, PLR0915
         f"simulating at {1.0 / mj_model.opt.timestep} Hz"
     )
 
+    # bench_planner(controller, mj_model,  mj_data)
+
     # Initialize the controller
-    mjx_data = mjx.put_data(mj_model, mj_data)
+    mjx_model = controller.task.model
+    mjx_data  = mjx.make_data(mjx_model)
     mjx_data = mjx_data.replace(
         mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat
     )

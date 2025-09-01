@@ -16,11 +16,11 @@ if __name__ == "__main__":
     # Set up the controller
     ctrl = MPPI(
         task,
-        num_samples=128,
+        num_samples=512,
         noise_level=1.0,
         temperature=0.001,
         num_randomizations=1,
-        plan_horizon=1.0,
+        plan_horizon=4.0,
         spline_type="zero",
         num_knots=16,
     )
@@ -38,6 +38,7 @@ if __name__ == "__main__":
             mj_model,
             mj_data,
             frequency=25,
-            show_traces=True,
+            show_traces=False,
             record_video=False,
+            head_less=False,
         )

@@ -53,7 +53,7 @@ class UDrone(Task):
         z = state.xpos[self.body_id, 2]
         alt_cost = jnp.maximum(0.0, 0.5 - z) ** 2
 
-        cost = 50*pos_cost + 10 * tilt_cost + 0.1*effort_cost + 10*alt_cost + 0.1*vel_cost + 0.01 * angvel_cost
+        cost = 50*pos_cost + 50000 * tilt_cost + 10*effort_cost + 10*alt_cost + 0.1*vel_cost + 0.01 * angvel_cost
         return cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
@@ -62,7 +62,7 @@ class UDrone(Task):
         goal_pos = state.xpos[self.goal_pos_id]
         pos_cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0) ** 4
         # return self.running_cost(state, jnp.zeros(self.model.nu))
-        return pos_cost
+        return 100*pos_cost
     
     def success_function(self, state, control):
         end_effector_pos = state.site_xpos[self.end_effector_pos_id]
