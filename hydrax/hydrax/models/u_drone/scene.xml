@@ -8,14 +8,15 @@
     </body>
   </worldbody>
 
-  <!-- <worldbody> not working as of July 2025 since mjx doesn't support collision between box and cylinder yet 
+  <worldbody>
     <geom name="frontwall" size="0.1 1 1" type="box" pos="-1 0 0" rgba ="0.6 0.6 0.6 0.5"/>
     <geom name="leftwall" size="1 0.1 1" type="box" pos="-0.1 1.1 0" rgba ="0.6 0.6 0.6 0.5"/>
     <geom name="rightwall" size="1 0.1 1" type="box" pos="-0.1 -1.1 0" rgba ="0.6 0.6 0.6 0.5"/>
     <geom name="topwall" size="1 1.2 0.1" type="box" pos="-0.1 0 1.1" rgba ="0.6 0.6 0.6 0.5"/>
-  </worldbody> -->
+    <geom name="bottomwall" size="1 1.2 0.1" type="box" pos="-0.1 0 -0.1" rgba ="0.6 0.6 0.6 0.5"/>
+  </worldbody>
 
-  <worldbody>
+  <!-- <worldbody>
     <body name="frontwall" pos="-1 0 0 " quat="0.707 0 0 0.707">
       <geom name="f0" size="0.1 0.6" type="cylinder" pos="-0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="f1" size="0.1 0.6" type="cylinder" pos="-0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
@@ -34,9 +35,6 @@
       <geom name="l4" size="0.1 0.6" type="cylinder" pos="0.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="l5" size="0.1 0.6" type="cylinder" pos="0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="l6" size="0.1 0.6" type="cylinder" pos="0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <!-- <geom name="l7" size="0.1 0.6" type="cylinder" pos="0.8 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="l8" size="0.1 0.6" type="cylinder" pos="1.0 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="l9" size="0.1 0.6" type="cylinder" pos="1.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/> -->
     </body>
 
     <body name="rightwall" pos="-0.30 -0.8 0 " quat="1 0 0 0">
@@ -47,9 +45,6 @@
       <geom name="r4" size="0.1 0.6" type="cylinder" pos="0.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="r5" size="0.1 0.6" type="cylinder" pos="0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="r6" size="0.1 0.6" type="cylinder" pos="0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <!-- <geom name="r7" size="0.1 0.6" type="cylinder" pos="0.8 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="r8" size="0.1 0.6" type="cylinder" pos="1.0 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="r9" size="0.1 0.6" type="cylinder" pos="1.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/> -->
     </body>
 
     <body name="topwall" pos="-0.3 0.6 1.2 " quat="1 1 0 0">
@@ -60,11 +55,18 @@
       <geom name="t4" size="0.1 0.6" type="cylinder" pos="0.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="t5" size="0.1 0.6" type="cylinder" pos="0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
       <geom name="t6" size="0.1 0.6" type="cylinder" pos="0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <!-- <geom name="t7" size="0.1 0.6" type="cylinder" pos="0.8 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="t8" size="0.1 0.6" type="cylinder" pos="1.0 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
-      <geom name="t9" size="0.1 0.6" type="cylinder" pos="1.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/> -->
     </body>
-  </worldbody>
+
+    <body name="bottomwall" pos="-0.3 0.6 0 " quat="1 1 0 0">
+      <geom name="b0" size="0.1 0.6" type="cylinder" pos="-0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b1" size="0.1 0.6" type="cylinder" pos="-0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b2" size="0.1 0.6" type="cylinder" pos="-0.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b3" size="0.1 0.6" type="cylinder" pos="0 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b4" size="0.1 0.6" type="cylinder" pos="0.2 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b5" size="0.1 0.6" type="cylinder" pos="0.4 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+      <geom name="b6" size="0.1 0.6" type="cylinder" pos="0.6 0 0.6" rgba ="0.6 0.6 0.6 0.5"/>
+    </body>
+  </worldbody> -->
 
 
   <statistic center="0 0 0.1" extent="0.6" meansize=".05"/>
@@ -84,6 +86,6 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" contype="0" conaffinity="0"/>
   </worldbody>
 </mujoco>

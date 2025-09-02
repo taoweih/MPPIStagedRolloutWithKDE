@@ -307,6 +307,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # Do a replanning step
                 plan_start = time.time()
                 policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+                _sync_tree(policy_params)
                 plan_time = time.time() - plan_start
 
                 # Visualize the rollouts
