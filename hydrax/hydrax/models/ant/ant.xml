@@ -17,7 +17,7 @@
   </custom>
   <default>
     <joint armature="1" damping="1" limited="true"/>
-    <geom contype="1" conaffinity="1" condim="3" density="5.0" friction="1 0.5 0.5"
+    <geom contype="4" conaffinity="3" condim="3" density="5.0" friction="1 0.5 0.5"
      rgba="0.4 0.33 0.26 1.0"/>
   </default>
   <asset>

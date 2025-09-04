@@ -17,12 +17,12 @@ if __name__ == "__main__":
     ctrl = MPPI(
         task,
         num_samples=512,
-        noise_level=1.0,
+        noise_level=0.8,
         temperature=0.001,
         num_randomizations=1,
-        plan_horizon=2.0,
+        plan_horizon=4.0,
         spline_type="zero",
-        num_knots=16,
+        num_knots=4,
     )
 
     # Define the model used for simulation

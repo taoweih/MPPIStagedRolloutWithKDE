@@ -3,6 +3,7 @@ import argparse
 import mujoco
 import jax
 import jax.numpy as jnp
+jax.config.update('jax_enable_x64', False)
 
 from mujoco import mjx
 
@@ -24,19 +25,32 @@ if __name__ == "__main__":
 
 
     # Set up the controller
-    ctrl = MPPIStagedRollout(
+    # ctrl = MPPIStagedRollout(
+    #     task,
+    #     num_samples=512,
+    #     noise_level=2.0,
+    #     temperature=0.01,
+    #     num_randomizations=1,
+    #     plan_horizon=1.5,
+    #     spline_type="zero",
+    #     num_knots=16,
+    #     kde_bandwidth=0.1,
+    #     # state_weight=jnp.array([1,1,0])
+    #     state_selection_function= state_selection_function,
+    # )
+
+    ctrl = MPPI(
         task,
         num_samples=512,
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=1.5,
+        plan_horizon=1.0,
         spline_type="zero",
         num_knots=16,
-        kde_bandwidth=0.1,
-        # state_weight=jnp.array([1,1,0])
-        state_selection_function= state_selection_function,
     )
+        
+
 
     # Define the model used for simulation
     mj_model = task.mj_model

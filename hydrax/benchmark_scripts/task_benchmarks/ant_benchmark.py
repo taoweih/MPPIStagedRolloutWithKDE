@@ -49,9 +49,9 @@ if __name__ == "__main__":
     # Horizon_start = 0.8
     # Horizon_end = 2.0
 
-    Horizon_steps = 9
-    Horizon_start = 0.2
-    Horizon_end = 1.0
+    Horizon_steps = 8
+    Horizon_start = 0.05
+    Horizon_end = 0.4
 
     NUM_TRIALS = 10
     
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     for h in tqdm(range(Horizon_steps)):
         # HORIZON = (h)*0.05 + 0.8
-        HORIZON = (h+1)*0.1 + 0.1
+        HORIZON = (h+1)*0.05
 
         ctrl_list = [PredictiveSampling(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=NUM_KNOTS),
                      
@@ -86,7 +86,7 @@ if __name__ == "__main__":
             ctrl = ctrl_list[j]
 
             mj_model = task.mj_model
-            mj_model.opt.timestep = 0.01
+            mj_model.opt.timestep = 0.001
 
             mj_data = mujoco.MjData(mj_model)
 

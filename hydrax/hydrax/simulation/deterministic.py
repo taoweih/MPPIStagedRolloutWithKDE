@@ -27,7 +27,7 @@ def _sync_tree(x):
         lambda a: a.block_until_ready() if hasattr(a, "block_until_ready") else a, x
     )
 
-def bench_planner(controller, mj_model, mj_data, initial_knots=None, reps=50):
+def bench_planner(controller, mj_model, mj_data, initial_knots=None, reps=1000):
     # Use the SAME MJX model the controller uses (float32)
     mjx_model = controller.task.model
     mjx_data  = mjx.make_data(mjx_model)
@@ -242,12 +242,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             # print(f'cost:{controller.task.running_cost(mj_data, mj_data.ctrl[:])}')
 
             # Try to run in roughly realtime
-            elapsed = time.time() - start_time
+            elapsed = time.perf_counter() - start_time
             if elapsed < step_dt:
                 time.sleep(step_dt - elapsed)
 
             # Print some timing information
-            rtr = step_dt / (time.time() - start_time)
+            rtr = step_dt / (time.perf_counter() - start_time)
             print(
                 f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
                 end="\r",
