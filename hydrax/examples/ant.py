@@ -2,7 +2,7 @@ import argparse
 
 import mujoco
 
-from hydrax.algs import MPPI, MPPIStagedRollout
+from hydrax.algs import MPPI, MPPIStagedRollout, DIAL
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.ant import Ant
 
@@ -20,10 +20,23 @@ if __name__ == "__main__":
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=0.2,
+        plan_horizon=2.0,
         spline_type="zero",
         num_knots=16,
     )
+
+    # ctrl = DIAL(
+    #     task,
+    #     num_samples=32,
+    #     noise_level=2.0,
+    #     temperature=0.01,
+    #     num_randomizations=1,
+    #     plan_horizon=2.0,
+    #     spline_type="zero",
+    #     num_knots=16,
+    #     beta_horizon= 1.0,
+    #     beta_opt_iter=0.5,
+    # )
 
     # Define the model used for simulation
     mj_model = task.mj_model
@@ -36,6 +49,6 @@ if __name__ == "__main__":
             mj_model,
             mj_data,
             frequency=50,
-            show_traces=False,
+            show_traces=True,
             record_video=False,
         )

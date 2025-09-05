@@ -19,7 +19,7 @@ class Ant(Task):
 
         super().__init__(
             mj_model,
-            trace_sites= None #["imu_in_torso", "left_foot", "right_foot"],
+            trace_sites= ["torso_site"],
         )
 
         self.end_effector_pos_id = mujoco.mj_name2id(
@@ -35,7 +35,11 @@ class Ant(Task):
 
         height_cost = jnp.square(0.75 -state.xpos[self.end_effector_pos_id, 2])
 
-        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0) + 10*height_cost
+        R = state.xmat[self.end_effector_pos_id].reshape(3, 3)
+        tilt_err = 1.0 - R[2, 2]
+        tilt_cost = tilt_err ** 2
+
+        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0) + 20*height_cost + 10*tilt_cost
         return cost
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:

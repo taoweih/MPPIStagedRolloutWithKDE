@@ -290,9 +290,9 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
                 )
             cost_array = []
-            while viewer.is_running():
+            # while viewer.is_running():
 
-            # for _ in range(200):
+            for _ in tqdm(range(200)):
                 start_time = time.time()
 
                 # Set the start state for the controller

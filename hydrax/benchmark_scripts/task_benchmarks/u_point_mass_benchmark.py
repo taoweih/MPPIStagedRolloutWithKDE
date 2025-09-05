@@ -21,7 +21,7 @@ from ray import tune
 if __name__ == "__main__":
     # common non-tunable parameters
     NUM_SAMPLES = 512
-    NUM_KNOTS = 16
+    NUM_KNOTS = 9
     SPLINE_TYPE = "zero"
 
     # common tunable parameters
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     TEMPERATURE = 0.01
 
     # MPPI staged rollout specific
-    NUM_KNOTS_PER_STAGE = 4
+    NUM_KNOTS_PER_STAGE = 3
     KDE_BANDWIDTH = 0.1
 
     # DIAL specific

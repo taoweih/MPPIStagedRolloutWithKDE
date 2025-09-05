@@ -20,7 +20,7 @@ if __name__ == "__main__":
         noise_level=0.8,
         temperature=0.001,
         num_randomizations=1,
-        plan_horizon=4.0,
+        plan_horizon=2.0,
         spline_type="zero",
         num_knots=4,
     )
@@ -37,7 +37,7 @@ if __name__ == "__main__":
             ctrl,
             mj_model,
             mj_data,
-            frequency=25,
+            frequency=50,
             show_traces=False,
             record_video=False,
             head_less=False,
