@@ -136,18 +136,18 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     policy_params = controller.init_params(initial_knots=initial_knots)
     ### Wrap this to update param stored in controller
     _jit_optimize = jax.jit(controller.optimize)
-    def jit_optimize(mjx_data, policy_params):
-        policy_params, rollouts = _jit_optimize(mjx_data, policy_params)
+    def jit_optimize(mjx_data, policy_params, global_kde=None):
+        policy_params, rollouts, rollout_states = _jit_optimize(mjx_data, policy_params, global_kde)
         if hasattr(controller, 'params'):
             controller.params = policy_params
-        return policy_params, rollouts
+        return policy_params, rollouts, rollout_states
     jit_interp_func = jax.jit(controller.interp_func)
 
     # Warm-up the controller
     print("Jitting the controller...")
     st = time.time()
-    policy_params, rollouts = jit_optimize(mjx_data, policy_params)
-    policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+    policy_params, rollouts, _ = jit_optimize(mjx_data, policy_params)
+    policy_params, rollouts, _ = jit_optimize(mjx_data, policy_params)
 
     tq = jnp.arange(0, sim_steps_per_replan) * mj_model.opt.timestep
     tk = policy_params.tk
@@ -290,9 +290,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     mj_model, ref_data, vopt, pert, catmask, viewer.user_scn
                 )
             cost_array = []
-            # while viewer.is_running():
 
-            for _ in tqdm(range(200)):
+            global_kde = None
+            global_memory = []
+
+            while viewer.is_running():
+            # for _ in tqdm(range(200)):
+            
                 start_time = time.time()
 
                 # Set the start state for the controller
@@ -306,7 +310,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 
                 # Do a replanning step
                 plan_start = time.time()
-                policy_params, rollouts = jit_optimize(mjx_data, policy_params)
+                policy_params, rollouts, rollout_states = jit_optimize(mjx_data, policy_params, global_kde)
+                print(f"rollout_states shape: {rollout_states.xpos.shape}")
                 _sync_tree(policy_params)
                 plan_time = time.time() - plan_start
 

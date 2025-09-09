@@ -7,7 +7,7 @@ jax.config.update('jax_enable_x64', False)
 
 from mujoco import mjx
 
-from hydrax.algs import MPPI, MPPIStagedRollout
+from hydrax.algs import MPPI, MPPIStagedRollout, MPPIMemory
 from hydrax.simulation.deterministic import run_interactive
 from hydrax.tasks.u_point_mass import UPointMass
 
@@ -19,8 +19,8 @@ if __name__ == "__main__":
     task = UPointMass()
 
     def state_selection_function(state: mjx.Data) -> jax.Array:
-        jnp_state = state.xpos[:,1,0:2]
-        jnp_state = jnp_state.reshape(jnp_state.shape[0], -1)
+        jnp_state = state.xpos[1,0:2]
+        # jnp_state = jnp_state.reshape(jnp_state.shape[0], -1)
         return jnp_state
 
 
@@ -39,15 +39,29 @@ if __name__ == "__main__":
     #     state_selection_function= state_selection_function,
     # )
 
-    ctrl = MPPI(
+    # ctrl = MPPI(
+    #     task,
+    #     num_samples=512,
+    #     noise_level=2.0,
+    #     temperature=0.01,
+    #     num_randomizations=1,
+    #     plan_horizon=1.0,
+    #     spline_type="zero",
+    #     num_knots=16,
+    # )
+
+    ctrl = MPPIMemory(
         task,
         num_samples=512,
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=1.0,
+        plan_horizon=1.5,
         spline_type="zero",
         num_knots=16,
+        kde_bandwidth=0.1,
+        # state_weight=jnp.array([1,1,0])
+        state_selection_function= state_selection_function,
     )
         
 

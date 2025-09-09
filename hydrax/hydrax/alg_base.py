@@ -245,32 +245,6 @@ class SamplingBasedController(ABC):
             A Trajectory object containing the control, costs, and trace sites.
         """
 
-        # def _scan_fn(
-        #     x: mjx.Data, u: jax.Array
-        # ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
-        #     """Compute the cost and observation, then advance the state."""
-        #     x = x.replace(ctrl=u)
-        #     x = mjx.step(model, x)  # step model + compute site positions
-        #     cost = self.dt * self.task.running_cost(x, u)
-        #     sites = self.task.get_trace_sites(x)
-        #     return x, (x, cost, sites)
-
-        # final_state, (states, costs, trace_sites) = jax.lax.scan(
-        #     _scan_fn, state, controls
-        # )
-        # final_cost = self.task.terminal_cost(final_state)
-        # final_trace_sites = self.task.get_trace_sites(final_state)
-
-        # costs = jnp.append(costs, final_cost)
-        # trace_sites = jnp.append(trace_sites, final_trace_sites[None], axis=0)
-
-        # return states, Trajectory(
-        #     controls=controls,
-        #     knots=knots,
-        #     costs=costs,
-        #     trace_sites=trace_sites,
-        # )
-
         def _scan_fn(
             x: mjx.Data, u: jax.Array
         ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
@@ -279,41 +253,23 @@ class SamplingBasedController(ABC):
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
             sites = self.task.get_trace_sites(x)
-            return x, (cost, sites)
-        
-        def start_cb():
-            start = time.perf_counter()
-            jax.debug.print(
-                f"rollout time start: {start:.4f}s \n"
-            )
+            return x, (x, cost, sites)
 
-        def end_cb(_):
-            rollout_time = time.perf_counter()
-            jax.debug.print(
-                f"rollout time end: {rollout_time:.4f}s \n"
-            )
-        
-        # jax.debug.callback(start_cb)
-        final_state, (costs, trace_sites) = jax.lax.scan(
+        final_state, (states, costs, trace_sites) = jax.lax.scan(
             _scan_fn, state, controls
         )
-        # dummy = costs[0]
-        # jax.debug.callback(end_cb, dummy)
-
-
         final_cost = self.task.terminal_cost(final_state)
         final_trace_sites = self.task.get_trace_sites(final_state)
 
         costs = jnp.append(costs, final_cost)
         trace_sites = jnp.append(trace_sites, final_trace_sites[None], axis=0)
 
-        return 0, Trajectory(
+        return states, Trajectory(
             controls=controls,
             knots=knots,
             costs=costs,
             trace_sites=trace_sites,
         )
-    
 
 
     def init_params(
