@@ -115,6 +115,9 @@ class MPPIMemory(SamplingBasedController):
         _params = super().init_params(initial_knots, seed)
         self.params = MPPIMemoryParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
         return MPPIMemoryParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
+
+    def state_selection_function(self, data: mjx.Data):
+        return self.state_selection_function(data)
     
     def density_cost(
         self, 
@@ -122,13 +125,11 @@ class MPPIMemory(SamplingBasedController):
         kde: gaussian_kde
     ):
         if kde is None:
-            jax.debug.print("none global kde")
             return 0
         else:
             jnp_state = self.state_selection_function(state)
             pdf = kde(jnp_state).squeeze(0)
             density_cost = 1000*pdf
-            jax.debug.print(f"density cost shape: {density_cost.shape}")
             return  density_cost
 
     def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:
@@ -285,7 +286,6 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
-            cost = cost + self.density_cost(x, global_kde)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
@@ -364,6 +364,7 @@ class MPPIMemory(SamplingBasedController):
 
         #### rollout and resample end ####
         final_cost = jax.vmap(self.task.terminal_cost)(final_state)
+        final_cost = final_cost + jax.vmap(self.density_cost, in_axes= (0, None))(final_state, global_kde)
         final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
         costs = jnp.append(costs, final_cost[:,None], axis=1)

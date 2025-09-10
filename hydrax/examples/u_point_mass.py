@@ -52,11 +52,11 @@ if __name__ == "__main__":
 
     ctrl = MPPIMemory(
         task,
-        num_samples=512,
+        num_samples=32,
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=1.5,
+        plan_horizon=0.3,
         spline_type="zero",
         num_knots=16,
         kde_bandwidth=0.1,

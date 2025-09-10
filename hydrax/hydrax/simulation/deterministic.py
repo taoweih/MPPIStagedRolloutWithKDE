@@ -15,6 +15,7 @@ from mujoco import mjx
 from hydrax.alg_base import SamplingBasedController
 from hydrax import ROOT
 from hydrax.utils.video import VideoRecorder
+from hydrax.utils.kde import gaussian_kde
 
 import copy
 
@@ -311,7 +312,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # Do a replanning step
                 plan_start = time.time()
                 policy_params, rollouts, rollout_states = jit_optimize(mjx_data, policy_params, global_kde)
-                print(f"rollout_states shape: {rollout_states.xpos.shape}")
+                rollout_states = jax.tree_util.tree_map(lambda x: jnp.squeeze(x, [0,1]), rollout_states)
+                rollout_states = jax.tree_util.tree_map(lambda x: x[:,-1,...][:,None,...], rollout_states)
+                rollout_states = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (x.shape[0]*x.shape[1], *x.shape[2:] )), rollout_states)
+                jnp_rollout_states = jax.vmap(controller.state_selection_function)(rollout_states)
+                global_memory.append(jnp_rollout_states)
+                global_kde = gaussian_kde(jnp.concatenate(global_memory, axis = 0).T, bw=0.1)
                 _sync_tree(policy_params)
                 plan_time = time.time() - plan_start
 
