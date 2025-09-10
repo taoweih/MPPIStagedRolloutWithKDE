@@ -286,6 +286,7 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
+            cost = cost + self.density_cost(x, global_kde)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
