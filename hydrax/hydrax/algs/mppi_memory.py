@@ -122,14 +122,17 @@ class MPPIMemory(SamplingBasedController):
     def density_cost(
         self, 
         state: mjx.Data,
-        kde: gaussian_kde
+        kde_memory: gaussian_kde,
+        valid_count: int,
     ):
-        if kde is None:
+        if kde_memory is None:
             return 0
         else:
             jnp_state = self.state_selection_function(state)
+            weights = jnp.arange(kde_memory.shape[0]) < valid_count
+            kde = gaussian_kde(kde_memory.T, bw=0.1, weights=weights)
             pdf = kde(jnp_state).squeeze(0)
-            density_cost = 1000*pdf
+            density_cost = 10*pdf
             return  density_cost
 
     def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:
@@ -157,7 +160,7 @@ class MPPIMemory(SamplingBasedController):
         mean = jnp.sum(weights[:, None, None] * rollouts.knots, axis=0)
         return params.replace(mean=mean)
     
-    def optimize(self, state: mjx.Data, params: Any, global_kde: gaussian_kde = None) -> Tuple[Any, Trajectory]:
+    def optimize(self, state: mjx.Data, params: Any, kde_memory: jax.Array = None, valid_count:int = None) -> Tuple[Any, Trajectory]:
         """Perform an optimization step to update the policy parameters.
 
         Args:
@@ -188,7 +191,7 @@ class MPPIMemory(SamplingBasedController):
             # combining costs using self.risk_strategy.
             rng, dr_rng = jax.random.split(params.rng)
             rollouts, rollout_states = self.rollout_with_randomizations(
-                state, new_tk, knots, dr_rng, global_kde
+                state, new_tk, knots, dr_rng, kde_memory, valid_count
             )
             params = params.replace(rng=rng)
 
@@ -211,7 +214,8 @@ class MPPIMemory(SamplingBasedController):
         tk: jax.Array,
         knots: jax.Array,
         rng: jax.Array,
-        global_kde: gaussian_kde = None,
+        kde_memory: jax.Array = None,
+        valid_count: int = None
     ) -> Trajectory:
         """Compute rollout costs, applying domain randomizations.
 
@@ -245,8 +249,8 @@ class MPPIMemory(SamplingBasedController):
         # Apply the control sequences, parallelized over both rollouts and
         # domain randomizations.
         rollout_states, rollouts = jax.vmap(
-            self.eval_rollouts, in_axes=(self.randomized_axes, 0, None, None, None)
-        )(self.model, states, controls, knots, global_kde)
+            self.eval_rollouts, in_axes=(self.randomized_axes, 0, None, None, None, None)
+        )(self.model, states, controls, knots, kde_memory, valid_count)
 
         # Combine the costs from different domain randomizations using the
         # specified risk strategy.
@@ -264,7 +268,8 @@ class MPPIMemory(SamplingBasedController):
         state: mjx.Data,
         controls: jax.Array,
         knots: jax.Array,
-        global_kde: gaussian_kde = None,
+        kde_memory: jax.Array = None,
+        valid_count: int = None,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
@@ -286,7 +291,7 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
-            cost = cost + self.density_cost(x, global_kde)
+            cost = cost + self.density_cost(x, kde_memory, valid_count)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
@@ -365,7 +370,7 @@ class MPPIMemory(SamplingBasedController):
 
         #### rollout and resample end ####
         final_cost = jax.vmap(self.task.terminal_cost)(final_state)
-        final_cost = final_cost + jax.vmap(self.density_cost, in_axes= (0, None))(final_state, global_kde)
+        # final_cost = final_cost + jax.vmap(self.density_cost, in_axes= (0, None))(final_state, global_kde)
         final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
         costs = jnp.append(costs, final_cost[:,None], axis=1)
