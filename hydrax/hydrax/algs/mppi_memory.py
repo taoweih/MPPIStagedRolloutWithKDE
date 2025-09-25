@@ -106,7 +106,17 @@ class MPPIMemory(SamplingBasedController):
         else:
             self.state_selection_function = state_selection_function
 
+        self.bounds = jnp.array([[-10.0, 10.0],   # x
+                    [-10.0, 10.0]],  # y 
+                   dtype=jnp.float32)
+        self.grid_width = jnp.array([0.01, 0.01], dtype=jnp.float32) 
+
+        self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
+
         self.ab_testing_flag = ab_testing_flag
+
+    def sizes(self):
+        return self._sizes
 
     def init_params(
         self, initial_knots: jax.Array = None, seed: int = 0
@@ -119,21 +129,23 @@ class MPPIMemory(SamplingBasedController):
     def state_selection_function(self, data: mjx.Data):
         return self.state_selection_function(data)
     
-    def density_cost(
-        self, 
-        state: mjx.Data,
-        kde_memory: gaussian_kde,
-        valid_count: int,
-    ):
-        if kde_memory is None:
+    def heuristic_cost(self, state:jax.Array, global_memory):
+        if global_memory is None:
             return 0
         else:
-            jnp_state = self.state_selection_function(state)
-            weights = jnp.arange(kde_memory.shape[0]) < valid_count
-            kde = gaussian_kde(kde_memory.T, bw=0.1, weights=weights)
-            pdf = kde(jnp_state).squeeze(0)
-            density_cost = 10*pdf
-            return  density_cost
+            idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+            heuristic_cost = global_memory[idx[0],idx[1]]
+            return heuristic_cost
+        
+    def update_heuristic(self, global_memory, state, value):
+        if global_memory is None:
+            return None
+        else:
+            idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+            global_memory = global_memory.at[idx[0],idx[1]].max(value)
+            return global_memory
 
     def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:
         """Sample a control sequence."""
@@ -160,7 +172,7 @@ class MPPIMemory(SamplingBasedController):
         mean = jnp.sum(weights[:, None, None] * rollouts.knots, axis=0)
         return params.replace(mean=mean)
     
-    def optimize(self, state: mjx.Data, params: Any, kde_memory: jax.Array = None, valid_count:int = None) -> Tuple[Any, Trajectory]:
+    def optimize(self, state: mjx.Data, params: Any, global_memory: jax.Array = None, valid_count:int = None) -> Tuple[Any, Trajectory]:
         """Perform an optimization step to update the policy parameters.
 
         Args:
@@ -180,8 +192,9 @@ class MPPIMemory(SamplingBasedController):
         new_mean = self.interp_func(new_tk, tk, params.mean[None, ...])[0]
         params = params.replace(tk=new_tk, mean=new_mean)
 
-        def _optimize_scan_body(params: Any, _: Any):
+        def _optimize_scan_body(carry, _):
             # Sample random control sequences from spline knots
+            params, global_memory = carry
             knots, params = self.sample_knots(params)
             knots = jnp.clip(
                 knots, self.task.u_min, self.task.u_max
@@ -190,23 +203,23 @@ class MPPIMemory(SamplingBasedController):
             # Roll out the control sequences, applying domain randomizations and
             # combining costs using self.risk_strategy.
             rng, dr_rng = jax.random.split(params.rng)
-            rollouts, rollout_states = self.rollout_with_randomizations(
-                state, new_tk, knots, dr_rng, kde_memory, valid_count
+            rollouts, rollout_states, global_memory= self.rollout_with_randomizations(
+                state, new_tk, knots, dr_rng, global_memory, valid_count
             )
             params = params.replace(rng=rng)
 
             # Update the policy parameters based on the combined costs
             params = self.update_params(params, rollouts)
 
-            return params, (rollouts, rollout_states)
+            return (params,global_memory), (rollouts, rollout_states)
 
-        params, (rollouts, rollout_states) = jax.lax.scan(
-            f=_optimize_scan_body, init=params, xs=jnp.arange(self.iterations)
+        (params,global_memory), (rollouts, rollout_states) = jax.lax.scan(
+            f=_optimize_scan_body, init=(params,global_memory), xs=jnp.arange(self.iterations)
         )
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
-        return params, rollouts_final, rollout_states
+        return params, rollouts_final, rollout_states, global_memory
 
     def rollout_with_randomizations(
         self,
@@ -214,7 +227,7 @@ class MPPIMemory(SamplingBasedController):
         tk: jax.Array,
         knots: jax.Array,
         rng: jax.Array,
-        kde_memory: jax.Array = None,
+        global_memory: jax.Array = None,
         valid_count: int = None
     ) -> Trajectory:
         """Compute rollout costs, applying domain randomizations.
@@ -248,9 +261,12 @@ class MPPIMemory(SamplingBasedController):
 
         # Apply the control sequences, parallelized over both rollouts and
         # domain randomizations.
-        rollout_states, rollouts = jax.vmap(
+        rollout_states, rollouts, global_memory_batch = jax.vmap(
             self.eval_rollouts, in_axes=(self.randomized_axes, 0, None, None, None, None)
-        )(self.model, states, controls, knots, kde_memory, valid_count)
+        )(self.model, states, controls, knots, global_memory, valid_count)
+        
+        if global_memory is not None:
+            global_memory = jnp.max(global_memory_batch,axis=0)
 
         # Combine the costs from different domain randomizations using the
         # specified risk strategy.
@@ -260,7 +276,7 @@ class MPPIMemory(SamplingBasedController):
         trace_sites = rollouts.trace_sites[0]  # visualization only, take 1st
         return rollouts.replace(
             costs=costs, controls=controls, knots=knots, trace_sites=trace_sites
-        ), rollout_states
+        ), rollout_states, global_memory
     
     def eval_rollouts(
         self,
@@ -268,7 +284,7 @@ class MPPIMemory(SamplingBasedController):
         state: mjx.Data,
         controls: jax.Array,
         knots: jax.Array,
-        kde_memory: jax.Array = None,
+        global_memory: jax.Array = None,
         valid_count: int = None,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
@@ -291,7 +307,7 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
-            cost = cost + self.density_cost(x, kde_memory, valid_count)
+            # cost = cost + self.density_cost(x, kde_memory, valid_count)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
@@ -370,15 +386,23 @@ class MPPIMemory(SamplingBasedController):
 
         #### rollout and resample end ####
         final_cost = jax.vmap(self.task.terminal_cost)(final_state)
-        # final_cost = final_cost + jax.vmap(self.density_cost, in_axes= (0, None))(final_state, global_kde)
+        jnp_final_state = jax.vmap(self.state_selection_function)(final_state)
+        final_cost = final_cost + jax.vmap(self.heuristic_cost,in_axes=(0, None))(jnp_final_state, global_memory) # add heristic to final cost
         final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
         costs = jnp.append(costs, final_cost[:,None], axis=1)
         trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
+
+        sum_cost = jnp.sum(costs, axis=1)
+        min_cost = jnp.min(sum_cost)
+        # new_h_value = jnp.max(0, min_cost - self.task.terminal_cost(state))
+        new_h_value = jnp.maximum(0, min_cost)
+        global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
+
 
         return states, Trajectory(
             controls=controls,
             knots=knots,
             costs=costs,
             trace_sites=trace_sites,
-        )
+        ), global_memory
