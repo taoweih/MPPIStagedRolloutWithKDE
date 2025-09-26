@@ -106,10 +106,10 @@ class MPPIMemory(SamplingBasedController):
         else:
             self.state_selection_function = state_selection_function
 
-        self.bounds = jnp.array([[-10.0, 10.0],   # x
-                    [-10.0, 10.0]],  # y 
+        self.bounds = jnp.array([[-1.0, 1.0],   # x
+                    [-1.0, 1.0]],  # y 
                    dtype=jnp.float32)
-        self.grid_width = jnp.array([0.01, 0.01], dtype=jnp.float32) 
+        self.grid_width = jnp.array([0.005, 0.005], dtype=jnp.float32) 
 
         self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
 
@@ -219,6 +219,9 @@ class MPPIMemory(SamplingBasedController):
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
+        # if global_memory is not None:
+        #     jax.debug.print("all memory: {}", jnp.sum(global_memory))
+
         return params, rollouts_final, rollout_states, global_memory
 
     def rollout_with_randomizations(
@@ -264,7 +267,7 @@ class MPPIMemory(SamplingBasedController):
         rollout_states, rollouts, global_memory_batch = jax.vmap(
             self.eval_rollouts, in_axes=(self.randomized_axes, 0, None, None, None, None)
         )(self.model, states, controls, knots, global_memory, valid_count)
-        
+
         if global_memory is not None:
             global_memory = jnp.max(global_memory_batch,axis=0)
 
@@ -395,7 +398,7 @@ class MPPIMemory(SamplingBasedController):
 
         sum_cost = jnp.sum(costs, axis=1)
         min_cost = jnp.min(sum_cost)
-        # new_h_value = jnp.max(0, min_cost - self.task.terminal_cost(state))
+        jax.debug.print("min_cost: {}",min_cost)
         new_h_value = jnp.maximum(0, min_cost)
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 

@@ -316,7 +316,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # Do a replanning step
                 plan_start = time.time()
                 policy_params, rollouts, rollout_states, global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
-                # print(global_memory.shape)
                 # _sync_tree(rollout_states)
                 # rollout_states = jax.tree_util.tree_map(lambda x: jnp.squeeze(x, [0,1]), rollout_states)
                 # rollout_states = jax.tree_util.tree_map(lambda x: x[:,-1,...][:,None,...], rollout_states)
@@ -329,6 +328,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # valid_count = min(capacity, valid_count + B)
 
                 _sync_tree(policy_params)
+                # print(jnp.sum(global_memory))
                 # _sync_tree(jnp_rollout_states)
 
                 plan_time = time.time() - plan_start
@@ -404,10 +404,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
                 # Print some timing information
                 rtr = step_dt / (time.time() - start_time)
-                print(
-                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
-                    end="\r",
-                )
+                # print(
+                #     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
+                #     end="\r",
+                # )
             plt.figure()
             plt.plot(cost_array)
             # plt.ylim(9,13)
@@ -631,10 +631,10 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
 
             # Print some timing information
             rtr = step_dt / (time.time() - start_time)
-            # print(
-            #     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
-            #     end="\r",
-            # )
+            print(
+                f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
+                end="\r",
+            )
 
     avg_success_iteration = 0 if num_sucess == 0 else total_iteration/num_sucess
     # Preserve the last printout
