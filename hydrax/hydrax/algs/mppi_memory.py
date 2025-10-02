@@ -109,7 +109,7 @@ class MPPIMemory(SamplingBasedController):
         self.bounds = jnp.array([[-1.0, 1.0],   # x
                     [-1.0, 1.0]],  # y 
                    dtype=jnp.float32)
-        self.grid_width = jnp.array([0.005, 0.005], dtype=jnp.float32) 
+        self.grid_width = jnp.array([0.01, 0.01], dtype=jnp.float32) 
 
         self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
 
@@ -129,6 +129,20 @@ class MPPIMemory(SamplingBasedController):
     def state_selection_function(self, data: mjx.Data):
         return self.state_selection_function(data)
     
+    def terminal_cost(self, state: mjx.Data, global_memory):
+        if global_memory is None:
+            return self.task.terminal_cost(state), global_memory
+        else:
+            jnp_state = self.state_selection_function(state)
+            heuristic_cost = self.heuristic_cost(jnp_state, global_memory)
+            default_cost = self.task.terminal_cost(state)
+            # jax.debug.print("hcost:{}",heuristic_cost)
+            new_cost = jnp.where(heuristic_cost==0, default_cost,heuristic_cost)
+            global_memory_updated = self.update_heuristic(global_memory, jnp_state, new_cost)
+            heuristic_cost = self.heuristic_cost(jnp_state, global_memory_updated)
+            return heuristic_cost, global_memory_updated
+            
+    
     def heuristic_cost(self, state:jax.Array, global_memory):
         if global_memory is None:
             return 0
@@ -138,7 +152,7 @@ class MPPIMemory(SamplingBasedController):
             heuristic_cost = global_memory[idx[0],idx[1]]
             return heuristic_cost
         
-    def update_heuristic(self, global_memory, state, value):
+    def update_heuristic(self, global_memory, state:jax.Array, value):
         if global_memory is None:
             return None
         else:
@@ -219,8 +233,8 @@ class MPPIMemory(SamplingBasedController):
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
-        # if global_memory is not None:
-        #     jax.debug.print("all memory: {}", jnp.sum(global_memory))
+        if global_memory is not None:
+            jax.debug.print("all memory: {}", jnp.sum(global_memory))
 
         return params, rollouts_final, rollout_states, global_memory
 
@@ -388,18 +402,21 @@ class MPPIMemory(SamplingBasedController):
         states = jax.tree_util.tree_map(lambda x, new: x.at[:,(num_stages-1)*timesteps_per_stage:,...].set(new),states, partial_states)
 
         #### rollout and resample end ####
-        final_cost = jax.vmap(self.task.terminal_cost)(final_state)
-        jnp_final_state = jax.vmap(self.state_selection_function)(final_state)
-        final_cost = final_cost + jax.vmap(self.heuristic_cost,in_axes=(0, None))(jnp_final_state, global_memory) # add heristic to final cost
+        final_cost, global_memory_batch= jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
+        if global_memory is not None:
+            global_memory = jnp.max(global_memory_batch,axis=0)
+
+        # jnp_final_state = jax.vmap(self.state_selection_function)(final_state)
+        # final_cost = final_cost + jax.vmap(self.heuristic_cost,in_axes=(0, None))(jnp_final_state, global_memory) # add heristic to final cost
+
         final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
         costs = jnp.append(costs, final_cost[:,None], axis=1)
         trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
 
         sum_cost = jnp.sum(costs, axis=1)
-        min_cost = jnp.min(sum_cost)
-        jax.debug.print("min_cost: {}",min_cost)
-        new_h_value = jnp.maximum(0, min_cost)
+        min_idx = jnp.argmin(final_cost)
+        new_h_value = sum_cost[min_idx]
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
 
