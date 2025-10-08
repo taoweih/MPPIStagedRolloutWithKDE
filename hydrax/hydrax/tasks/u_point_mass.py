@@ -31,7 +31,7 @@ class UPointMass(Task):
         end_effector_pos = state.xpos[self.end_effector_pos_id]
         goal_pos = state.xpos[self.goal_pos_id]
 
-        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0)
+        cost = jnp.sum(jnp.abs(end_effector_pos - goal_pos),axis=0)
         return 100*cost
     
     def success_function(self, state: mjx.Data, control: jax.Array) -> jax.Array:

@@ -19,7 +19,7 @@ if __name__ == "__main__":
     task = UPointMass()
 
     def state_selection_function(state: mjx.Data) -> jax.Array:
-        jnp_state = state.xpos[1,0:2]
+        jnp_state = state.xpos[...,1,0:2]
         # jnp_state = jnp_state.reshape(jnp_state.shape[0], -1)
         return jnp_state
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         noise_level=2.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=0.2,
+        plan_horizon=0.7,
         spline_type="zero",
         num_knots=16,
         kde_bandwidth=0.1,

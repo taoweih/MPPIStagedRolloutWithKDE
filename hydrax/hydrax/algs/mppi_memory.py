@@ -109,7 +109,7 @@ class MPPIMemory(SamplingBasedController):
         self.bounds = jnp.array([[-1.0, 1.0],   # x
                     [-1.0, 1.0]],  # y 
                    dtype=jnp.float32)
-        self.grid_width = jnp.array([0.01, 0.01], dtype=jnp.float32) 
+        self.grid_width = jnp.array([0.005, 0.005], dtype=jnp.float32) 
 
         self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
 
@@ -158,6 +158,16 @@ class MPPIMemory(SamplingBasedController):
         else:
             idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
             idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+
+            _ = jax.lax.cond(
+                global_memory[idx[0], idx[1]].astype(jnp.int32) != value.astype(jnp.int32),
+                # true branch: print, then return a dummy JAX scalar
+                lambda op: (jax.debug.print("updated from {} to {}", op[0], op[1]), jnp.array(0, dtype=jnp.int32))[1],
+                # false branch: just return the same-shaped dummy
+                lambda op: jnp.array(0, dtype=jnp.int32),
+                (global_memory[idx[0], idx[1]], value),
+            )   
+
             global_memory = global_memory.at[idx[0],idx[1]].max(value)
             return global_memory
 
@@ -233,8 +243,8 @@ class MPPIMemory(SamplingBasedController):
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
-        if global_memory is not None:
-            jax.debug.print("all memory: {}", jnp.sum(global_memory))
+        # if global_memory is not None:
+        #     jax.debug.print("all memory: {}", jnp.sum(global_memory))
 
         return params, rollouts_final, rollout_states, global_memory
 
@@ -414,11 +424,27 @@ class MPPIMemory(SamplingBasedController):
         costs = jnp.append(costs, final_cost[:,None], axis=1)
         trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
 
+        def _fori_fn(
+            i, carry
+        ):
+            global_memory, states, cumsum_costs = carry
+            assert cumsum_costs.shape[0] == states.shape[0]
+            new_h_value = cumsum_costs[i]
+            global_memory = self.update_heuristic(global_memory, states[i], new_h_value)
+            return (global_memory, states, cumsum_costs)
+
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(final_cost)
         new_h_value = sum_cost[min_idx]
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
+        jnp_states = jax.vmap(self.state_selection_function)(states)
+        best_trajectory_states = jnp_states[min_idx]
+        best_trajectory_costs = costs[min_idx][:-1]
+
+        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
+
+        global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
 
         return states, Trajectory(
             controls=controls,
