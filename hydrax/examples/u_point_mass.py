@@ -185,7 +185,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             policy_params, rollouts, rollout_states, global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%100 == 0:
+            if iter%50 == 0:
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
                 im = ax.imshow(global_memory, cmap="Reds", vmin=np.min(global_memory), vmax=np.max(global_memory))
