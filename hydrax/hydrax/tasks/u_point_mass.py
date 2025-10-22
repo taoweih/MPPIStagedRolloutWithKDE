@@ -28,11 +28,13 @@ class UPointMass(Task):
         )
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
-        end_effector_pos = state.xpos[self.end_effector_pos_id]
-        goal_pos = state.xpos[self.goal_pos_id]
+        # end_effector_pos = state.xpos[self.end_effector_pos_id]
+        # goal_pos = state.xpos[self.goal_pos_id]
 
-        cost = jnp.sum(jnp.abs(end_effector_pos - goal_pos),axis=0)
-        return 100*cost
+        # cost = jnp.sum(jnp.abs(end_effector_pos - goal_pos),axis=0)
+        # return 100*cost + 100*jnp.sum(control**2)
+        return 100*jnp.sum(control**2)
+    
     
     def success_function(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         end_effector_pos = state.xpos[self.end_effector_pos_id]
@@ -43,7 +45,11 @@ class UPointMass(Task):
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         """The terminal cost ϕ(x_T)."""
-        return self.running_cost(state, jnp.zeros(self.model.nu))
+        end_effector_pos = state.xpos[self.end_effector_pos_id]
+        goal_pos = state.xpos[self.goal_pos_id]
+
+        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0)
+        return 100*cost
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomize the friction parameters."""

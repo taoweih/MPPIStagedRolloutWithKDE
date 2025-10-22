@@ -124,7 +124,7 @@ class SamplingBasedController(ABC):
                 {key: 0 for key in randomizations.keys()}
             )
 
-    def optimize(self, state: mjx.Data, params: Any) -> Tuple[Any, Trajectory]:
+    def optimize(self, state: mjx.Data, params: Any, global_memory: jax.Array = None,) -> Tuple[Any, Trajectory]:
         """Perform an optimization step to update the policy parameters.
 
         Args:
@@ -170,7 +170,7 @@ class SamplingBasedController(ABC):
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
-        return params, rollouts_final
+        return params, rollouts_final, None, None
 
     def rollout_with_randomizations(
         self,

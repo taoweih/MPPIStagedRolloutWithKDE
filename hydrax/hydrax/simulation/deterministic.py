@@ -19,6 +19,8 @@ from hydrax.utils.kde import gaussian_kde
 
 import copy
 
+import pandas as pd
+
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
@@ -137,8 +139,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     policy_params = controller.init_params(initial_knots=initial_knots)
     ### Wrap this to update param stored in controller
     _jit_optimize = jax.jit(controller.optimize)
-    def jit_optimize(mjx_data, policy_params, global_memory=None, valid_count = None):
-        policy_params, rollouts, rollout_states, global_memory= _jit_optimize(mjx_data, policy_params, global_memory, valid_count)
+    def jit_optimize(mjx_data, policy_params, global_memory=None):
+        policy_params, rollouts, rollout_states, global_memory= _jit_optimize(mjx_data, policy_params, global_memory)
         if hasattr(controller, 'params'):
             controller.params = policy_params
         return policy_params, rollouts, rollout_states, global_memory
@@ -292,15 +294,12 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 )
             cost_array = []
 
-            # state_shape = (controller.state_selection_function)(mj_data).shape
-            # global_memory = jnp.zeros((capacity, *state_shape), dtype=jnp.float32)
-            # print(f"sizes: {controller.sizes()}")
-            global_memory = jnp.zeros(controller.sizes())
-            write_idx = 0     
-            valid_count = 0 
+            global_memory = 0
+            if hasattr(controller, "sizes"):
+                global_memory = jnp.zeros(controller.sizes())
 
             while viewer.is_running():
-            # for _ in tqdm(range(200)):
+            # for iter in tqdm(range(5)):
             
                 start_time = time.time()
 
@@ -316,21 +315,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 # Do a replanning step
                 plan_start = time.time()
                 policy_params, rollouts, rollout_states, global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
-                # _sync_tree(rollout_states)
-                # rollout_states = jax.tree_util.tree_map(lambda x: jnp.squeeze(x, [0,1]), rollout_states)
-                # rollout_states = jax.tree_util.tree_map(lambda x: x[:,-1,...][:,None,...], rollout_states)
-                # rollout_states = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (x.shape[0]*x.shape[1], *x.shape[2:] )), rollout_states)
-                # jnp_rollout_states = jax.vmap(controller.state_selection_function)(rollout_states)
-                
-                # B = jnp_rollout_states.shape[0]
-                # global_memory = global_memory.at[write_idx:write_idx+B].set(jnp_rollout_states)
-                # write_idx = (write_idx + B) % capacity
-                # valid_count = min(capacity, valid_count + B)
-
                 _sync_tree(policy_params)
-                # print(jnp.sum(global_memory))
-                # _sync_tree(jnp_rollout_states)
-
                 plan_time = time.time() - plan_start
 
                 # Visualize the rollouts
@@ -389,13 +374,6 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
                 cost = controller.task.success_function(mj_data, mj_data.ctrl[:])
                 cost_array.append(cost)
-                # jnp_states = controller.state_selection_function(mj_data)[None,...]
-                
-                # B = jnp_states.shape[0]
-                # global_memory = global_memory.at[write_idx:write_idx+B].set(jnp_states)
-                # write_idx = (write_idx + B) % capacity
-                # valid_count = min(capacity, valid_count + B)
-                # print(f'cost:{controller.task.running_cost(mj_data, mj_data.ctrl[:])}')
 
                 # Try to run in roughly realtime
                 elapsed = time.time() - start_time
@@ -404,10 +382,10 @@ def run_interactive(  # noqa: PLR0912, PLR0915
 
                 # Print some timing information
                 rtr = step_dt / (time.time() - start_time)
-                # print(
-                #     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
-                #     end="\r",
-                # )
+                print(
+                    f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
+                    end="\r",
+                )
             plt.figure()
             plt.plot(cost_array)
             # plt.ylim(9,13)
