@@ -166,8 +166,41 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
         if hasattr(controller, "sizes"):
             global_memory = jnp.zeros(controller.sizes())
 
+            # def world_to_grid(x, y):
+            #     j = (x - bounds[0,0]) / grid_width[0]
+            #     i = (_sizes[1] - 1) - (y - bounds[1,0]) / grid_width[1]
+            #     return j, i
+            
+            bounds = jnp.array([[-1, 1],   # x
+                    [-1, 1]],  # y 
+                   dtype=jnp.float32)
+            
+            grid_width = jnp.array([0.05, 0.05], dtype=jnp.float32) 
+
+            _sizes = jnp.ceil((bounds[:,1] - bounds[:,0]) / grid_width).astype(int)
+
+            end_effector_pos_id = mujoco.mj_name2id(
+                mj_model, mujoco.mjtObj.mjOBJ_BODY, "point_mass"
+            )
+            goal_pos_id = mujoco.mj_name2id(
+                mj_model, mujoco.mjtObj.mjOBJ_BODY, "goal"
+            ) 
+            
+            def grid_to_world(i, j):
+                x = bounds[0,0] + (j + 0.5) * grid_width[0]
+                y = bounds[1,0] + ((_sizes[1] - 1 - i) + 0.5) * grid_width[1]
+                return x, y
+            
+            for i in range(global_memory.shape[0]):
+                for j in range(global_memory.shape[1]):
+                    new_data = mujoco.MjData(mj_model)
+                    x, y = grid_to_world(global_memory.shape[1]-j, i)
+                    new_data.qpos[:] = [x, y]
+                    mujoco.mj_forward(mj_model, new_data)
+                    global_memory = global_memory.at[i, j].set(task.terminal_cost(new_data))
+
         # while viewer.is_running():
-        for iter in tqdm(range(501)):
+        for iter in tqdm(range(401)):
         
             start_time = time.time()
 
@@ -185,15 +218,15 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             policy_params, rollouts, rollout_states, global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%50 == 0:
+            if iter%10 == 0 :#or iter in range(290,310):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
-                im = ax.imshow(global_memory, cmap="Reds", vmin=np.min(global_memory), vmax=np.max(global_memory))
+                im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=400)
 
                 for i in range(global_memory.shape[0]):
                     for j in range(global_memory.shape[1]):
                         ax.text(j, i, f"{global_memory[i, j]:.2f}",
-                                ha="center", va="center", fontsize=14, color="black")
+                                ha="center", va="center", fontsize=16, color="black")
 
                 ax.set_xticks(np.arange(-.5, global_memory.shape[1], 1), minor=True)
                 ax.set_yticks(np.arange(-.5, global_memory.shape[0], 1), minor=True)
@@ -210,16 +243,15 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 _sizes = jnp.ceil((bounds[:,1] - bounds[:,0]) / grid_width).astype(int) 
 
                 def world_to_grid(x, y):
-                    # Convert world coordinate (x,y) to image coordinate (j,i)
-                    j = (x - bounds[0,0]) / grid_width[0]
-                    i = (_sizes[1] - 1) - (y - bounds[1,0]) / grid_width[1]
+                    j = (x - bounds[0,0]) / grid_width[0] - 0.5
+                    i = (_sizes[1] - 1) - ((y - bounds[1,0]) / grid_width[1] - 0.5)
                     return j, i
 
                 ## draw goal
                 x, y = 0.8, 0.011
                 cx, cy = world_to_grid(x, y)
-                circle = patches.Circle((cx, cy), radius=0.1,
-                                    facecolor="green")
+                circle = patches.Circle((cx, cy), radius=0.2,
+                                    facecolor="red")
                 ax.add_patch(circle)
 
                 ### walls
@@ -239,8 +271,6 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     (cx - width / 2, cy - height / 2),
                     width, height,
                     facecolor=(0.6, 0.6, 0.6, 0.8),
-                    edgecolor="black",
-                    linewidth=2
                 )
                 ax.add_patch(front_rect)
 
@@ -254,8 +284,6 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     (cx - width / 2, cy - height / 2),
                     width, height,
                     facecolor=(0.6, 0.6, 0.6, 0.8),
-                    edgecolor="black",
-                    linewidth=2
                 )
                 ax.add_patch(left_rect)
 
@@ -269,8 +297,6 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     (cx - width / 2, cy - height / 2),
                     width, height,
                     facecolor=(0.6, 0.6, 0.6, 0.8),
-                    edgecolor="black",
-                    linewidth=2
                 )
                 ax.add_patch(right_rect)
 
@@ -279,8 +305,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
 
                 cx, cy = world_to_grid(jnp_location_start[1], -jnp_location_start[0])
 
-                circle = patches.Circle((cx, cy), radius=0.1,
-                                    facecolor="orange")
+                circle = patches.Circle((cx, cy), radius=0.2,
+                                    facecolor="green")
                 ax.add_patch(circle)
 
                 ## draw exploring path
@@ -296,8 +322,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ax.plot(
                     path_points[:, 0],
                     path_points[:, 1],
-                    color="black",
-                    linewidth=3,
+                    color="orange",
+                    linewidth=8,
                     alpha=0.8
                 )
 

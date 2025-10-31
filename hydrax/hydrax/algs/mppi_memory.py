@@ -137,7 +137,8 @@ class MPPIMemory(SamplingBasedController):
             heuristic_cost = self.heuristic_cost(jnp_state, global_memory)
             default_cost = self.task.terminal_cost(state)
 
-            return jnp.maximum(heuristic_cost, default_cost)
+            # return jnp.maximum(heuristic_cost, default_cost)
+            return heuristic_cost
             # jax.debug.print("hcost:{}",heuristic_cost)
             # new_cost = jnp.where(heuristic_cost==0, default_cost,heuristic_cost)
             # global_memory_updated = self.update_heuristic(global_memory, jnp_state, new_cost)
