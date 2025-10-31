@@ -300,8 +300,11 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 )
                 ax.add_patch(right_rect)
 
+                rollout_states, nominal_trajectory_states = rollout_states
+                
                 # draw start location
-                jnp_location_start = rollout_states.squeeze(0).squeeze(0)[0]
+                heuristic_states, all_states = rollout_states
+                jnp_location_start = heuristic_states.squeeze(0).squeeze(0)[0]
 
                 cx, cy = world_to_grid(jnp_location_start[1], -jnp_location_start[0])
 
@@ -309,8 +312,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                                     facecolor="green")
                 ax.add_patch(circle)
 
-                ## draw exploring path
-                states = rollout_states.squeeze(0).squeeze(0)
+                ## draw exploring path for updating heuristic
+                states = heuristic_states.squeeze(0).squeeze(0)
 
                 path_points = []
                 for s in states:
@@ -323,9 +326,48 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     path_points[:, 0],
                     path_points[:, 1],
                     color="orange",
-                    linewidth=8,
+                    linewidth=5,
                     alpha=0.8
                 )
+                
+                ## draw nominal (actual) trajectory
+                nominal_trajectory_states = nominal_trajectory_states
+
+                path_points = []
+                for s in nominal_trajectory_states:
+                    cx, cy = world_to_grid(s[1], -s[0])
+                    path_points.append((cx, cy))
+
+                path_points = np.array(path_points)
+
+                ax.plot(
+                    path_points[:, 0],
+                    path_points[:, 1],
+                    color="purple",
+                    linewidth=5,
+                    alpha=0.8
+                )
+
+                ## draw all sampled paths
+                all_states = all_states.squeeze(0).squeeze(0)
+                for i in range(all_states.shape[0]):
+                    one_trajectory_states = all_states[i]
+                    path_points = []
+                    for s in one_trajectory_states:
+                        cx, cy = world_to_grid(s[1], -s[0])
+                        path_points.append((cx, cy))
+
+                    path_points = np.array(path_points)
+
+                    if i % 30 == 0:
+
+                        ax.plot(
+                            path_points[:, 0],
+                            path_points[:, 1],
+                            color="black",
+                            linewidth=2,
+                            alpha=0.5
+                        )
 
 
                 # draw path

@@ -246,7 +246,32 @@ class MPPIMemory(SamplingBasedController):
 
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
-        return params, rollouts_final, rollout_states, global_memory
+        tq = jnp.linspace(tk[0], tk[-1], self.ctrl_steps)
+        controls = self.interp_func(tq, tk, params.mean[None, ...])[0]
+
+        def _scan_fn(
+            x: mjx.Data, u: jax.Array
+        ) -> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
+            """Compute the cost and observation, then advance the state."""
+            x = x.replace(ctrl=u)
+            x = mjx.step(self.model, x)  # step model + compute site positions
+            cost = self.dt * self.task.running_cost(x, u)
+            # cost = cost + self.density_cost(x, kde_memory, valid_count)
+            sites = self.task.get_trace_sites(x)
+            return x, (x, cost, sites)
+        
+        def _rollout_fn(
+           x: mjx.Data, u: jax.Array
+        )-> Tuple[mjx.Data, Tuple[mjx.Data, jax.Array, jax.Array]]:
+            '''Batched version of _scan_fn'''
+            final_state, (states, costs, trace_sites) =jax.lax.scan(
+                _scan_fn,  x, u
+            )
+            return final_state, (states, costs, trace_sites)
+        
+        _, (nominal_trajectory_states, _, _) = _rollout_fn(state, controls)
+
+        return params, rollouts_final, (rollout_states, self.state_selection_function(nominal_trajectory_states)), global_memory
 
     def rollout_with_randomizations(
         self,
@@ -448,7 +473,7 @@ class MPPIMemory(SamplingBasedController):
 
         best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
 
-        return best_trajectory_states, Trajectory(
+        return (best_trajectory_states, jnp_states), Trajectory(
             controls=controls,
             knots=knots,
             costs=costs,
