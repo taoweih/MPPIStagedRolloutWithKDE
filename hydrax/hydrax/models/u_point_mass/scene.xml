@@ -11,10 +11,10 @@
 
   <!-- U obstacle -->
   <worldbody>
-    <body name="U" pos="0 0 0" quat="0.707 0 0 -0.707">
-      <geom name="frontwall" size="0.01 0.2 0.2" type="box" pos="-0.2 0 0" rgba ="0.6 0.6 0.6 0.8"/>
-      <geom name="leftwall" size="0.2 0.01 0.2" type="box" pos="-0.01 0.21 0" rgba ="0.6 0.6 0.6 0.8"/>
-      <geom name="rightwall" size="0.2 0.01 0.2" type="box" pos="-0.01 -0.21 0" rgba ="0.6 0.6 0.6 0.8"/>
+    <body name="U" pos="0 0 0" quat="1 0 0 0">
+      <geom name="frontwall" size="0.2 0.01 0.2" type="box" pos="0 0.19 0" rgba="0.6 0.6 0.6 0.8"/>
+      <geom name="leftwall"  size="0.01 0.2 0.2" type="box" pos="0.211 0 0"  rgba="0.6 0.6 0.6 0.8"/>
+      <geom name="rightwall" size="0.01 0.2 0.2" type="box" pos="-0.211 0 0" rgba="0.6 0.6 0.6 0.8"/>
     </body>
   </worldbody>
 

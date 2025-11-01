@@ -194,13 +194,13 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             for i in range(global_memory.shape[0]):
                 for j in range(global_memory.shape[1]):
                     new_data = mujoco.MjData(mj_model)
-                    x, y = grid_to_world(global_memory.shape[1]-j, i)
+                    x, y = grid_to_world(i, j)
                     new_data.qpos[:] = [x, y]
                     mujoco.mj_forward(mj_model, new_data)
-                    global_memory = global_memory.at[i, j].set(task.terminal_cost(new_data))
+                    global_memory = global_memory.at[i, j].set(controller.task.terminal_cost(new_data))
 
         # while viewer.is_running():
-        for iter in tqdm(range(401)):
+        for iter in tqdm(range(501)):
         
             start_time = time.time()
 
@@ -215,10 +215,10 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             
             # Do a replanning step
             plan_start = time.time()
-            policy_params, rollouts, rollout_states, global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
+            policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%10 == 0 :#or iter in range(290,310):
+            if iter%10 == 0 or iter in range(260,280):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
                 im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=400)
@@ -243,12 +243,12 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 _sizes = jnp.ceil((bounds[:,1] - bounds[:,0]) / grid_width).astype(int) 
 
                 def world_to_grid(x, y):
-                    j = (x - bounds[0,0]) / grid_width[0] - 0.5
-                    i = (_sizes[1] - 1) - ((y - bounds[1,0]) / grid_width[1] - 0.5)
-                    return j, i
+                    i = (x - bounds[0,0]) / grid_width[0] -0.5
+                    j = (_sizes[1] - 1) - (((y - bounds[1,0]) / grid_width[1]) -0.5)
+                    return i, j
 
                 ## draw goal
-                x, y = 0.8, 0.011
+                x, y = 0, 0.8
                 cx, cy = world_to_grid(x, y)
                 circle = patches.Circle((cx, cy), radius=0.2,
                                     facecolor="red")
@@ -257,13 +257,13 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ### walls
 
                 # MuJoCo wall geoms:
-                # frontwall: size=(0.01,0.2), pos=(-0.2,0)
-                # leftwall : size=(0.2,0.01), pos=(-0.01,0.21)
-                # rightwall: size=(0.2,0.01), pos=(-0.01,-0.21)
+                # <geom name="frontwall" size="0.2 0.01 0.2" type="box" pos="0 0.2 0" rgba="0.6 0.6 0.6 0.8"/>
+                # <geom name="leftwall"  size="0.01 0.2 0.2" type="box" pos="0.21 0 0"  rgba="0.6 0.6 0.6 0.8"/>
+                # <geom name="rightwall" size="0.01 0.2 0.2" type="box" pos="-0.21 0 0" rgba="0.6 0.6 0.6 0.8"/>
 
                 # front
-                x, y = 0.2, 0
-                sx, sy = 0.01, 0.2
+                x, y = 0, 0.19,
+                sx, sy = 0.2, 0.01
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
                 height = (2 * sy) / grid_width[1]
@@ -275,8 +275,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ax.add_patch(front_rect)
 
                 # left
-                x, y = 0.01, 0.21
-                sx, sy = 0.2, 0.01
+                x, y = 0.21, 0
+                sx, sy = 0.01, 0.2
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
                 height = (2 * sy) / grid_width[1]
@@ -288,8 +288,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ax.add_patch(left_rect)
 
                 # right
-                x, y = 0.01, -0.21
-                sx, sy = 0.2, 0.01
+                x, y = -0.21, 0
+                sx, sy = 0.01, 0.2
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
                 height = (2 * sy) / grid_width[1]
@@ -359,7 +359,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
 
                     path_points = np.array(path_points)
 
-                    if i % 30 == 0:
+                    if i % 20 == 0:
 
                         ax.plot(
                             path_points[:, 0],
@@ -378,6 +378,8 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             # _sync_tree(rollout_states)
    
             _sync_tree(policy_params)
+
+            global_memory = new_global_memory
 
             plan_time = time.time() - plan_start
 
@@ -508,7 +510,7 @@ if __name__ == "__main__":
         task,
         num_samples=512,
         noise_level=2.0,
-        temperature=0.01,
+        temperature=0.0001,
         num_randomizations=1,
         plan_horizon=0.2,
         spline_type="zero",
