@@ -218,7 +218,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%10 == 0 or iter in range(260,280):
+            if iter%10 == 0 or iter in range(270,300):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
                 im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=400)
@@ -257,12 +257,12 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ### walls
 
                 # MuJoCo wall geoms:
-                # <geom name="frontwall" size="0.2 0.01 0.2" type="box" pos="0 0.2 0" rgba="0.6 0.6 0.6 0.8"/>
-                # <geom name="leftwall"  size="0.01 0.2 0.2" type="box" pos="0.21 0 0"  rgba="0.6 0.6 0.6 0.8"/>
-                # <geom name="rightwall" size="0.01 0.2 0.2" type="box" pos="-0.21 0 0" rgba="0.6 0.6 0.6 0.8"/>
+                #   <geom name="frontwall" size="0.2 0.01 0.2" type="box" pos="0 0.20 0" rgba="0.6 0.6 0.6 0.8"/>
+                #   <geom name="leftwall"  size="0.01 0.2 0.2" type="box" pos="0.21 0.01 0"  rgba="0.6 0.6 0.6 0.8"/>
+                #   <geom name="rightwall" size="0.01 0.2 0.2" type="box" pos="-0.21 0.01 0" rgba="0.6 0.6 0.6 0.8"/>
 
                 # front
-                x, y = 0, 0.19,
+                x, y = 0, 0.2,
                 sx, sy = 0.2, 0.01
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
@@ -275,7 +275,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ax.add_patch(front_rect)
 
                 # left
-                x, y = 0.21, 0
+                x, y = 0.21, 0.01
                 sx, sy = 0.01, 0.2
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
@@ -288,7 +288,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 ax.add_patch(left_rect)
 
                 # right
-                x, y = -0.21, 0
+                x, y = -0.21, 0.01
                 sx, sy = 0.01, 0.2
                 cx, cy = world_to_grid(x, y)
                 width = (2 * sx) / grid_width[0]
@@ -306,7 +306,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                 heuristic_states, all_states = rollout_states
                 jnp_location_start = heuristic_states.squeeze(0).squeeze(0)[0]
 
-                cx, cy = world_to_grid(jnp_location_start[1], -jnp_location_start[0])
+                cx, cy = world_to_grid(jnp_location_start[0],jnp_location_start[1])
 
                 circle = patches.Circle((cx, cy), radius=0.2,
                                     facecolor="green")
@@ -317,7 +317,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
 
                 path_points = []
                 for s in states:
-                    cx, cy = world_to_grid(s[1], -s[0])
+                    cx, cy = world_to_grid(s[0],s[1])
                     path_points.append((cx, cy))
 
                 path_points = np.array(path_points)
@@ -335,7 +335,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
 
                 path_points = []
                 for s in nominal_trajectory_states:
-                    cx, cy = world_to_grid(s[1], -s[0])
+                    cx, cy = world_to_grid(s[0],s[1])
                     path_points.append((cx, cy))
 
                 path_points = np.array(path_points)
@@ -354,7 +354,7 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     one_trajectory_states = all_states[i]
                     path_points = []
                     for s in one_trajectory_states:
-                        cx, cy = world_to_grid(s[1], -s[0])
+                        cx, cy = world_to_grid(s[0],s[1])
                         path_points.append((cx, cy))
 
                     path_points = np.array(path_points)

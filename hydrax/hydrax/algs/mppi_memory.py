@@ -150,9 +150,15 @@ class MPPIMemory(SamplingBasedController):
         if global_memory is None:
             return 0
         else:
+            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+            # heuristic_cost = global_memory[idx[0],idx[1]]
+            # return heuristic_cost
+        
             idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
             idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
-            heuristic_cost = global_memory[idx[0],idx[1]]
+            heuristic_cost = global_memory[idx[0], idx[1]]
             return heuristic_cost
         
     def update_heuristic(self, global_memory, state:jax.Array, value):
@@ -160,7 +166,8 @@ class MPPIMemory(SamplingBasedController):
             return None
         else:
             idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+            idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
+            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
 
             # _ = jax.lax.cond(
             #     jnp.isclose(global_memory[idx[0], idx[1]] - value, 0),
