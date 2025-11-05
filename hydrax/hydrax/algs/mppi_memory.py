@@ -169,16 +169,14 @@ class MPPIMemory(SamplingBasedController):
             idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
             idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
 
-            # _ = jax.lax.cond(
-            #     jnp.isclose(global_memory[idx[0], idx[1]] - value, 0),
-            #     # true branch: print, then return a dummy JAX scalar
-            #     lambda op: (jax.debug.print("updated from {} to {}", op[0], op[1]), jnp.array(0, dtype=jnp.int32))[1],
-            #     # false branch: just return the same-shaped dummy
-            #     lambda op: jnp.array(0, dtype=jnp.int32),
-            #     (global_memory[idx[0], idx[1]], value),
-            # )   
+            global_memory = jax.lax.cond(
+                global_memory[idx[0], idx[1]] == 0,
+                lambda op: op,
+                lambda op: op.at[idx[0], idx[1]].max(value),
+                global_memory,
+            )
 
-            global_memory = global_memory.at[idx[0],idx[1]].max(value)
+            # global_memory = global_memory.at[idx[0],idx[1]].max(value)
             return global_memory
 
     def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:

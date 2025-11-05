@@ -199,6 +199,12 @@ def run_interactive_visualize(  # noqa: PLR0912, PLR0915
                     mujoco.mj_forward(mj_model, new_data)
                     global_memory = global_memory.at[i, j].set(controller.task.terminal_cost(new_data))
 
+            # hard code goal to 0
+            idx = jnp.floor((jnp.array([0, 0.8]) - bounds[:,0]) / grid_width)
+            idx = jnp.array([(_sizes[1] - 1) - idx[1],idx[0]])
+            idx = jnp.clip(idx, 0, _sizes - 1).astype(jnp.int32)
+            global_memory = global_memory.at[idx[0], idx[1]].set(0)
+
         # while viewer.is_running():
         for iter in tqdm(range(501)):
         
