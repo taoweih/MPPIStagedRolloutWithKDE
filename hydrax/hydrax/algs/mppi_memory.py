@@ -343,6 +343,7 @@ class MPPIMemory(SamplingBasedController):
         knots: jax.Array,
         global_memory: jax.Array = None,
         valid_count: int = None,
+        using_staged_rollout: bool = True,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
@@ -378,83 +379,90 @@ class MPPIMemory(SamplingBasedController):
             )
             return final_state, (states, costs, trace_sites)
         
-        #### rollout and resample start ####
+        if using_staged_rollout:
+        
+            #### rollout and resample start ####
 
-        ## Initilize full states and costs that will be updated after each stage
-        states = jax.tree_util.tree_map(lambda x: jnp.zeros((self.num_samples, self.ctrl_steps)+x.shape, dtype=x.dtype),state)
-        costs = jnp.zeros((self.num_samples, self.ctrl_steps))
-        trace_sites = jnp.zeros((self.num_samples, self.ctrl_steps) + self.task.get_trace_sites(state).shape)
+            ## Initilize full states and costs that will be updated after each stage
+            states = jax.tree_util.tree_map(lambda x: jnp.zeros((self.num_samples, self.ctrl_steps)+x.shape, dtype=x.dtype),state)
+            costs = jnp.zeros((self.num_samples, self.ctrl_steps))
+            trace_sites = jnp.zeros((self.num_samples, self.ctrl_steps) + self.task.get_trace_sites(state).shape)
 
-        # Calculate some parameters for ease of use
-        num_stages = int(math.floor(self.num_knots / self.num_knots_per_stage))
-        timesteps_per_stage = int(math.floor(self.ctrl_steps / self.num_knots))*self.num_knots_per_stage
+            # Calculate some parameters for ease of use
+            num_stages = int(math.floor(self.num_knots / self.num_knots_per_stage))
+            timesteps_per_stage = int(math.floor(self.ctrl_steps / self.num_knots))*self.num_knots_per_stage
 
-        # batch init state 
-        curr_state = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
+            # batch init state 
+            curr_state = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
 
-        for n in range(num_stages-1):
-            # partial rollout
-            partial_controls = controls[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage,:]
-            latest_state, (partial_states, partial_costs, partial_trace_sites) = _rollout_fn(curr_state, partial_controls)
-            costs = costs.at[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage].set(partial_costs)
-            trace_sites = trace_sites.at[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage].set(partial_trace_sites)
-            states = jax.tree_util.tree_map(lambda x, new: x.at[:, n*timesteps_per_stage:(n+1)*timesteps_per_stage,...].set(new),states, partial_states)
+            for n in range(num_stages-1):
+                # partial rollout
+                partial_controls = controls[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage,:]
+                latest_state, (partial_states, partial_costs, partial_trace_sites) = _rollout_fn(curr_state, partial_controls)
+                costs = costs.at[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage].set(partial_costs)
+                trace_sites = trace_sites.at[:,n*timesteps_per_stage:(n+1)*timesteps_per_stage].set(partial_trace_sites)
+                states = jax.tree_util.tree_map(lambda x, new: x.at[:, n*timesteps_per_stage:(n+1)*timesteps_per_stage,...].set(new),states, partial_states)
 
-            # resampling indices
-            jnp_latest_state = jax.vmap(self.state_selection_function)(latest_state)
-            weight = self.state_weight
-            jnp_latest_state = weight * jnp_latest_state
-            kde = gaussian_kde(jnp_latest_state.T,bw=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
+                # resampling indices
+                jnp_latest_state = jax.vmap(self.state_selection_function)(latest_state)
+                weight = self.state_weight
+                jnp_latest_state = weight * jnp_latest_state
+                kde = gaussian_kde(jnp_latest_state.T,bw=self.kde_bandwidth) # scipy kde expect data dimension to be first and batch dimension to be second
 
-            p_x = kde.pdf(jnp_latest_state.T)
-            epsilon = 1e-6
-            inv_px = (1.0 / p_x + epsilon)
-            inv_px = inv_px / inv_px.sum()
+                p_x = kde.pdf(jnp_latest_state.T)
+                epsilon = 1e-6
+                inv_px = (1.0 / p_x + epsilon)
+                inv_px = inv_px / inv_px.sum()
+                
+                indices = jax.random.categorical(jax.random.PRNGKey(0),jnp.log(inv_px),shape=(self.num_samples,))
+
+                # reorder things around (only need to reorder up to current steps but won't matter since the later ones will be overwritten)
+                states = jax.tree_util.tree_map(lambda x: x[indices,...], states)
+                controls = controls[indices,...]
+                knots = knots[indices,...]
+                costs = costs[indices,...]
+                trace_sites = trace_sites[indices,...]
+
+                curr_state = jax.tree_util.tree_map(lambda x: x[:,-1,...], partial_states)
+                curr_state = jax.tree_util.tree_map(lambda x: x[indices,...], curr_state)
+
+                # sample new knots, update controls
+                partial_param = self.params.replace(mean= self.params.mean[(n+1)*self.num_knots_per_stage:,:])
+                sampled_partial_knots, _ = self.sample_knots(partial_param)
+                sampled_partial_knots = jnp.clip(
+                    sampled_partial_knots, self.task.u_min, self.task.u_max
+                )
+                knots = knots.at[:,(n+1)*self.num_knots_per_stage:,:].set(sampled_partial_knots)
+                tk = partial_param.tk
+                tq = jnp.linspace(tk[0], tk[-1], self.ctrl_steps)
+                controls = self.interp_func(tq, tk, knots)
+
+            # rollout remaining control
+            partial_controls = controls[:,(num_stages-1)*timesteps_per_stage:,:]
+            final_state, (partial_states, partial_costs, partial_trace_sites) = _rollout_fn(curr_state, partial_controls)
+            costs = costs.at[:,(num_stages-1)*timesteps_per_stage:].set(partial_costs)
+            trace_sites = trace_sites.at[:,(num_stages-1)*timesteps_per_stage:].set(partial_trace_sites)
+            states = jax.tree_util.tree_map(lambda x, new: x.at[:,(num_stages-1)*timesteps_per_stage:,...].set(new),states, partial_states)
+
+            #### rollout and resample end ####
+            final_cost = jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
+            final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
+
+            costs = jnp.append(costs, final_cost[:,None], axis=1)
+            trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
+
+        else:
+            states = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
+
+            final_state, (states, costs, trace_sites) = _rollout_fn(states,controls)
             
-            indices = jax.random.categorical(jax.random.PRNGKey(0),jnp.log(inv_px),shape=(self.num_samples,))
+            final_cost = jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
+            final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
+            costs = jnp.append(costs, final_cost[:,None],axis=1)
+            trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
 
-            # reorder things around (only need to reorder up to current steps but won't matter since the later ones will be overwritten)
-            states = jax.tree_util.tree_map(lambda x: x[indices,...], states)
-            controls = controls[indices,...]
-            knots = knots[indices,...]
-            costs = costs[indices,...]
-            trace_sites = trace_sites[indices,...]
-
-            curr_state = jax.tree_util.tree_map(lambda x: x[:,-1,...], partial_states)
-            curr_state = jax.tree_util.tree_map(lambda x: x[indices,...], curr_state)
-
-            # sample new knots, update controls
-            partial_param = self.params.replace(mean= self.params.mean[(n+1)*self.num_knots_per_stage:,:])
-            sampled_partial_knots, _ = self.sample_knots(partial_param)
-            sampled_partial_knots = jnp.clip(
-                sampled_partial_knots, self.task.u_min, self.task.u_max
-            )
-            knots = knots.at[:,(n+1)*self.num_knots_per_stage:,:].set(sampled_partial_knots)
-            tk = partial_param.tk
-            tq = jnp.linspace(tk[0], tk[-1], self.ctrl_steps)
-            controls = self.interp_func(tq, tk, knots)
-
-        # rollout remaining control
-        partial_controls = controls[:,(num_stages-1)*timesteps_per_stage:,:]
-        final_state, (partial_states, partial_costs, partial_trace_sites) = _rollout_fn(curr_state, partial_controls)
-        costs = costs.at[:,(num_stages-1)*timesteps_per_stage:].set(partial_costs)
-        trace_sites = trace_sites.at[:,(num_stages-1)*timesteps_per_stage:].set(partial_trace_sites)
-        states = jax.tree_util.tree_map(lambda x, new: x.at[:,(num_stages-1)*timesteps_per_stage:,...].set(new),states, partial_states)
-
-        #### rollout and resample end ####
-        final_cost = jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
-        # if global_memory is not None:
-        #     global_memory = jnp.max(global_memory_batch,axis=0)
-
-        # jnp_final_state = jax.vmap(self.state_selection_function)(final_state)
-        # final_cost = final_cost + jax.vmap(self.heuristic_cost,in_axes=(0, None))(jnp_final_state, global_memory) # add heristic to final cost
-
-        final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
-
-        costs = jnp.append(costs, final_cost[:,None], axis=1)
-        trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
-
-        def _fori_fn(
+        # helper function for updating heuristic
+        def _fori_fn( 
             i, carry
         ):
             global_memory, states, cumsum_costs = carry
@@ -463,17 +471,17 @@ class MPPIMemory(SamplingBasedController):
             global_memory = self.update_heuristic(global_memory, states[i], new_h_value)
             return (global_memory, states, cumsum_costs)
 
+        # update heuristic for initial state
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(final_cost)
         new_h_value = sum_cost[min_idx]
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
+        # update heuristic along lowest terminal cost trajectory
         jnp_states = jax.vmap(self.state_selection_function)(states)
         best_trajectory_states = jnp_states[min_idx]
         best_trajectory_costs = costs[min_idx]
-
         cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
-
         global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
 
         best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
