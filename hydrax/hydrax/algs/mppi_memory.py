@@ -341,7 +341,7 @@ class MPPIMemory(SamplingBasedController):
         controls: jax.Array,
         knots: jax.Array,
         global_memory: jax.Array = None,
-        using_staged_rollout: bool = True,
+        using_staged_rollout: bool = False,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
