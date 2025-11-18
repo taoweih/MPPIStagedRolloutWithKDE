@@ -204,11 +204,11 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
             idx = jnp.array([(_sizes[1] - 1) - idx[1],idx[0]])
             idx = jnp.clip(idx, 0, _sizes - 1).astype(jnp.int32)
             global_memory = global_memory.at[idx[0], idx[1]].set(0)
-            global_memory = global_memory.at[idx[0]+1, idx[1]+1].set(0)
-            global_memory = global_memory.at[idx[0]-1, idx[1]-1].set(0)
+            # global_memory = global_memory.at[idx[0]+1, idx[1]+1].set(0)
+            # global_memory = global_memory.at[idx[0]-1, idx[1]-1].set(0)
 
-        # while viewer.is_running():
-        for iter in tqdm(range(401)):
+        while viewer.is_running():
+        # for iter in tqdm(range(401)):
         
             start_time = time.time()
 

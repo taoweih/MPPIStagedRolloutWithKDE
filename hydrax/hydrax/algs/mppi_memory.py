@@ -469,15 +469,15 @@ class MPPIMemory(SamplingBasedController):
         # update heuristic for initial state
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(final_cost)
-        new_h_value = sum_cost[min_idx]
+        new_h_value = sum_cost[min_idx] + self.terminal_cost(state, global_memory) - self.terminal_cost(states[min_idx][-1], global_memory)
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
         # update heuristic along lowest terminal cost trajectory
         jnp_states = jax.vmap(self.state_selection_function)(states)
         best_trajectory_states = jnp_states[min_idx]
-        best_trajectory_costs = costs[min_idx]
-        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
-        global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
+        # best_trajectory_costs = costs[min_idx]
+        # cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
+        # global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
 
         best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
 
