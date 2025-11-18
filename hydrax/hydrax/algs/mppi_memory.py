@@ -338,7 +338,7 @@ class MPPIMemory(SamplingBasedController):
         controls: jax.Array,
         knots: jax.Array,
         global_memory: jax.Array = None,
-        using_staged_rollout: bool = False,
+        using_staged_rollout: bool = True,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
@@ -443,8 +443,19 @@ class MPPIMemory(SamplingBasedController):
             final_cost = jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
             final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
+            # helper funciton to add heuristic to running cost for heuristic consistency
+            def _running_cost_fn_with_h(
+                i, carry    
+            ):
+                costs, states, global_memory = carry
+                costs = costs.at[i].set(costs[i]+ jax.vmap(self.terminal_cost,in_axes=[0,None])(states[i], global_memory) - jax.vmap(self.terminal_cost,in_axes=[0,None])(states[-1], global_memory))
+                return (costs, states, global_memory)
+            costs, _, _ = jax.lax.fori_loop(0,costs.shape[0], _running_cost_fn_with_h, (costs,states, global_memory))
+
             costs = jnp.append(costs, final_cost[:,None], axis=1)
             trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
+
+
 
         else:
             states = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
@@ -469,7 +480,8 @@ class MPPIMemory(SamplingBasedController):
         # update heuristic for initial state
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(final_cost)
-        new_h_value = sum_cost[min_idx] + self.terminal_cost(state, global_memory) - self.terminal_cost(states[min_idx][-1], global_memory)
+        new_h_value = sum_cost[min_idx]
+        # new_h_value = sum_cost[min_idx] + self.terminal_cost(state, global_memory) - self.terminal_cost(states[min_idx][-1], global_memory)
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
         # update heuristic along lowest terminal cost trajectory
