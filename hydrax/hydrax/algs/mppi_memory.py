@@ -444,13 +444,13 @@ class MPPIMemory(SamplingBasedController):
             final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
             # helper funciton to add heuristic to running cost for heuristic consistency
-            def _running_cost_fn_with_h(
-                i, carry    
-            ):
-                costs, states, global_memory = carry
-                costs = costs.at[i].set(costs[i]+ jax.vmap(self.terminal_cost,in_axes=[0,None])(states[i], global_memory) - jax.vmap(self.terminal_cost,in_axes=[0,None])(states[-1], global_memory))
-                return (costs, states, global_memory)
-            costs, _, _ = jax.lax.fori_loop(0,costs.shape[0], _running_cost_fn_with_h, (costs,states, global_memory))
+            # def _running_cost_fn_with_h(
+            #     i, carry    
+            # ):
+            #     costs, states, global_memory = carry
+            #     costs = costs.at[i].set(costs[i] + jax.vmap(self.task.distance_cost)(states[i], states[i+1]))
+            #     return (costs, states, global_memory)
+            # costs, _, _ = jax.lax.fori_loop(0,costs.shape[0]-1, _running_cost_fn_with_h, (costs,states, global_memory))
 
             costs = jnp.append(costs, final_cost[:,None], axis=1)
             trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
@@ -479,17 +479,17 @@ class MPPIMemory(SamplingBasedController):
 
         # update heuristic for initial state
         sum_cost = jnp.sum(costs, axis=1)
-        min_idx = jnp.argmin(final_cost)
+        min_idx = jnp.argmin(sum_cost)
         new_h_value = sum_cost[min_idx]
         # new_h_value = sum_cost[min_idx] + self.terminal_cost(state, global_memory) - self.terminal_cost(states[min_idx][-1], global_memory)
         global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
-        # update heuristic along lowest terminal cost trajectory
+        # update heuristic along lowest cost trajectory
         jnp_states = jax.vmap(self.state_selection_function)(states)
         best_trajectory_states = jnp_states[min_idx]
-        # best_trajectory_costs = costs[min_idx]
-        # cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
-        # global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
+        best_trajectory_costs = costs[min_idx]
+        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
+        global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
 
         best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
 
