@@ -246,6 +246,7 @@ class MPPIMemory(SamplingBasedController):
             f=_optimize_scan_body, init=(params,global_memory), xs=jnp.arange(self.iterations)
         )
 
+        ## rollout once for visualization of current control trajectory
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
         tq = jnp.linspace(tk[0], tk[-1], self.ctrl_steps)
