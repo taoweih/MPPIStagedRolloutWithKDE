@@ -3,7 +3,7 @@ from typing import Literal, Tuple, Any
 import jax
 import jax.numpy as jnp
 import math
-# from jax.scipy.stats import gaussian_kde
+
 from hydrax.utils.kde import gaussian_kde
 import numpy as np
 
@@ -18,8 +18,21 @@ from hydrax.task_base import Task
 
 from typing import Callable, Optional
 
+from flax import nnx
+
+class NeuralNet(nnx.Module):
+  def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs= nnx.Rngs(0)):
+    self.linear = nnx.Linear(din, dmid, rngs=rngs)
+    self.bn = nnx.BatchNorm(dmid, rngs=rngs)
+    self.dropout = nnx.Dropout(0.2, rngs=rngs)
+    self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
+
+  def __call__(self, x):
+    x = nnx.relu(self.dropout(self.bn(self.linear(x))))
+    return self.linear_out(x)
+
 @dataclass
-class MPPIMemoryParams(SamplingParams):
+class MPPIMemoryContinuousParams(SamplingParams):
     """Policy parameters for model-predictive path integral control.
 
     Same as SamplingParams, but with a different name for clarity.
@@ -31,7 +44,7 @@ class MPPIMemoryParams(SamplingParams):
     """
 
 
-class MPPIMemory(SamplingBasedController):
+class MPPIMemoryContinuous(SamplingBasedController):
     """Model-predictive path integral control.
 
     Addition to MPPI algorithm by sampling state space during rollout and encourage 
@@ -55,7 +68,6 @@ class MPPIMemory(SamplingBasedController):
         num_knots: int = 4,
         iterations: int = 1,
         state_selection_function: Optional[Callable[[mjx.Data], jax.Array]] = None,
-        ab_testing_flag: int = None,
     ) -> None:
         """Initialize the controller.
 
@@ -75,7 +87,6 @@ class MPPIMemory(SamplingBasedController):
             num_knots: The number of knots in the control spline.
             iterations: The number of optimization iterations to perform.
             state_selection_function: Function used to select which data from mjx.Data is used in density estimation
-            ab_testing_flag: Temporary flag for testing
         """
         super().__init__(
             task,
@@ -106,25 +117,29 @@ class MPPIMemory(SamplingBasedController):
         else:
             self.state_selection_function = state_selection_function
 
-        self.bounds = jnp.array([[-1, 1],   # x
-                    [-1, 1]],  # y 
-                   dtype=jnp.float32)
-        self.grid_width = jnp.array([0.05, 0.05], dtype=jnp.float32) 
+        # self.bounds = jnp.array([[-1, 1],   # x
+        #             [-1, 1]],  # y 
+        #            dtype=jnp.float32)
+        # self.grid_width = jnp.array([0.05, 0.05], dtype=jnp.float32) 
 
-        self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
+        # self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
 
-        self.ab_testing_flag = ab_testing_flag
+
+        model = NeuralNet(din=2, dout=1)
+        self.graphdef, _ = nnx.split(model)
+        
+        self.nn_learning_rate = 1e-3
 
     def sizes(self):
         return self._sizes
 
     def init_params(
         self, initial_knots: jax.Array = None, seed: int = 0
-    ) -> MPPIMemoryParams:
+    ) -> MPPIMemoryContinuousParams:
         """Initialize the policy parameters."""
         _params = super().init_params(initial_knots, seed)
-        self.params = MPPIMemoryParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
-        return MPPIMemoryParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
+        self.params = MPPIMemoryContinuousParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
+        return MPPIMemoryContinuousParams(tk=_params.tk, mean=_params.mean, rng=_params.rng)
 
     def state_selection_function(self, data: mjx.Data):
         return self.state_selection_function(data)
@@ -135,10 +150,11 @@ class MPPIMemory(SamplingBasedController):
         else:
             jnp_state = self.state_selection_function(state)
             heuristic_cost = self.heuristic_cost(jnp_state, global_memory)
-            default_cost = self.task.terminal_cost(state)
-
-            # return jnp.maximum(heuristic_cost, default_cost)
+            # default_cost = self.task.terminal_cost(state)
             return heuristic_cost
+
+            # return jnp.maximum(heuristic_cost, default_cost) # if update only when accessed (lazy update)
+           
             # jax.debug.print("hcost:{}",heuristic_cost)
             # new_cost = jnp.where(heuristic_cost==0, default_cost,heuristic_cost)
             # global_memory_updated = self.update_heuristic(global_memory, jnp_state, new_cost)
@@ -150,36 +166,60 @@ class MPPIMemory(SamplingBasedController):
         if global_memory is None:
             return 0
         else:
-            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
-            # heuristic_cost = global_memory[idx[0],idx[1]]
-            # return heuristic_cost
         
-            idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
-            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
-            heuristic_cost = global_memory[idx[0], idx[1]]
-            return heuristic_cost
+            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            # idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
+            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
+            # heuristic_cost = global_memory[idx[0], idx[1]]
+            #return heuristic_cost
+
+            model = nnx.merge(self.graphdef, global_memory)
+            return model(state).squeeze() 
         
     def update_heuristic(self, global_memory, state:jax.Array, value):
         if global_memory is None:
             return None
         else:
-            idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
-            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
+            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
+            # idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
+            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
 
-            global_memory = jax.lax.cond(
-                global_memory[idx[0], idx[1]] == 0,
-                lambda op: op,
-                lambda op: op.at[idx[0], idx[1]].max(value),
-                global_memory,
-            )
+            # def update_func(args): # helper function for update memory and update flag
+            #     memory, flag = args
+            #     memory = memory.at[idx[0], idx[1]].max(value)
+            #     return (memory, flag)
+            
+            # cond = ((global_memory[idx[0], idx[1]] < 0.01)| (global_memory_flag[idx[0], idx[1]] == 1)|(global_memory[idx[0], idx[1]]>=value))
+ 
+            # (global_memory, global_memory_flag) = jax.lax.cond(
+            #     cond,
+            #     lambda op: op,
+            #     update_func,
+            #     (global_memory, global_memory_flag),
+            # )
 
-            # global_memory = global_memory.at[idx[0],idx[1]].max(value)
-            return global_memory
+            # # global_memory = global_memory.at[idx[0],idx[1]].max(value)
+            # return (global_memory, global_memory_flag)
 
-    def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:
+            model = nnx.merge(self.graphdef, global_memory)
+
+            true_value = value
+            curr_value = self.heuristic_cost(state, global_memory)
+
+            def loss_fn(curr_value, true_value):
+                return (true_value - curr_value)**2
+    
+            grads = nnx.grad(loss_fn)(model, curr_value, true_value)
+            _, grads = nnx.split(grads)
+
+            new_global_memory = jax.tree_util.tree_map(
+            lambda weight, grad: weight - self.nn_learning_rate * grad, 
+            global_memory, 
+            grads)   
+
+            return new_global_memory
+
+    def sample_knots(self, params: MPPIMemoryContinuousParams) -> Tuple[jax.Array, MPPIMemoryContinuousParams]:
         """Sample a control sequence."""
         rng, sample_rng = jax.random.split(params.rng)
         noise = jax.random.normal(
@@ -195,8 +235,8 @@ class MPPIMemory(SamplingBasedController):
         return controls, params.replace(rng=rng)
 
     def update_params(
-        self, params: MPPIMemoryParams, rollouts: Trajectory
-    ) -> MPPIMemoryParams:
+        self, params: MPPIMemoryContinuousParams, rollouts: Trajectory
+    ) -> MPPIMemoryContinuousParams:
         """Update the mean with an exponentially weighted average."""
         costs = jnp.sum(rollouts.costs, axis=1)  # sum over time steps
         # N.B. jax.nn.softmax takes care of details like baseline subtraction.
@@ -204,7 +244,7 @@ class MPPIMemory(SamplingBasedController):
         mean = jnp.sum(weights[:, None, None] * rollouts.knots, axis=0)
         return params.replace(mean=mean)
     
-    def optimize(self, state: mjx.Data, params: Any, global_memory: jax.Array = None) -> Tuple[Any, Trajectory]:
+    def optimize(self, state: mjx.Data, params: Any, global_memory: nnx.State = None) -> Tuple[Any, Trajectory]:
         """Perform an optimization step to update the policy parameters.
 
         Args:
@@ -249,6 +289,7 @@ class MPPIMemory(SamplingBasedController):
             f=_optimize_scan_body, init=(params,global_memory), xs=jnp.arange(self.iterations)
         )
 
+        ## rollout once for visualization of current control trajectory
         rollouts_final = jax.tree.map(lambda x: x[-1], rollouts)
 
         tq = jnp.linspace(tk[0], tk[-1], self.ctrl_steps)
@@ -284,7 +325,7 @@ class MPPIMemory(SamplingBasedController):
         tk: jax.Array,
         knots: jax.Array,
         rng: jax.Array,
-        global_memory: jax.Array = None,
+        global_memory: nnx.State = None,
     ) -> Trajectory:
         """Compute rollout costs, applying domain randomizations.
 
@@ -340,7 +381,7 @@ class MPPIMemory(SamplingBasedController):
         state: mjx.Data,
         controls: jax.Array,
         knots: jax.Array,
-        global_memory: jax.Array = None,
+        global_memory: nnx.State = None,
         using_staged_rollout: bool = True,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
@@ -363,7 +404,6 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
-            # cost = cost + self.density_cost(x, kde_memory, valid_count)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
@@ -459,6 +499,13 @@ class MPPIMemory(SamplingBasedController):
             costs = jnp.append(costs, final_cost[:,None],axis=1)
             trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
 
+        B = states.xpos.shape[0]
+        # conver state to (B, T, state.sahpe)
+        state = jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, (B,) + x.shape), state)
+        state = jax.tree_util.tree_map(lambda x: x[:, None, ...],  state)
+
+        states = jax.tree_util.tree_map(lambda x0, x1: jnp.concatenate([x0, x1], axis=1), state, states) #append initial state to full states
+
         # helper function for updating heuristic
         def _fori_fn( 
             i, carry
@@ -469,20 +516,30 @@ class MPPIMemory(SamplingBasedController):
             global_memory = self.update_heuristic(global_memory, states[i], new_h_value)
             return (global_memory, states, cumsum_costs)
 
-        # update heuristic for initial state
+        # find idx of trajectory with minimal costs
         sum_cost = jnp.sum(costs, axis=1)
-        min_idx = jnp.argmin(final_cost)
-        new_h_value = sum_cost[min_idx]
-        global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
+        min_idx = jnp.argmin(sum_cost)
 
-        # update heuristic along lowest terminal cost trajectory
+        # only update heuristic for initial state
+        # new_h_value = sum_cost[min_idx]
+        # global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
+
+        # update heuristic along lowest cost trajectory
         jnp_states = jax.vmap(self.state_selection_function)(states)
         best_trajectory_states = jnp_states[min_idx]
         best_trajectory_costs = costs[min_idx]
-        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
-        global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
+        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
 
-        best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
+        # global_memory_flag = None
+        # if global_memory is not None:
+        #     global_memory_flag = jnp.zeros_like(global_memory)
+        #     last_state = best_trajectory_states[::-1][0]
+        #     idx = jnp.floor((last_state - self.bounds[:,0]) / self.grid_width)
+        #     idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
+        #     idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)  
+        #     global_memory_flag.at[idx[0],idx[1]].set(1) 
+
+        global_memory ,_, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
 
         return (best_trajectory_states, jnp_states), Trajectory(
             controls=controls,

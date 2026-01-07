@@ -18,6 +18,8 @@ import os
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib
+matplotlib.use('Agg')
 
 import mujoco.viewer
 import numpy as np
@@ -207,8 +209,8 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
             # global_memory = global_memory.at[idx[0]+1, idx[1]+1].set(0)
             # global_memory = global_memory.at[idx[0]-1, idx[1]-1].set(0)
 
-        # while viewer.is_running():
-        for iter in tqdm(range(101)):
+        while viewer.is_running():
+        # for iter in tqdm(range(101)):
         
             start_time = time.time()
 
@@ -226,7 +228,7 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%10 == 0 or iter in range(30,50):
+            if False: #iter%10 == 0 or iter in range(30,50):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
                 im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=200)
