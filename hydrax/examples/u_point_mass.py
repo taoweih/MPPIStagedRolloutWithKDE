@@ -200,15 +200,15 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
                     global_memory = global_memory.at[i, j].set(controller.task.terminal_cost(new_data))
 
             # hard code goal to 0
-            idx = jnp.floor((jnp.array([0, 0.8]) - bounds[:,0]) / grid_width)
-            idx = jnp.array([(_sizes[1] - 1) - idx[1],idx[0]])
-            idx = jnp.clip(idx, 0, _sizes - 1).astype(jnp.int32)
-            global_memory = global_memory.at[idx[0], idx[1]].set(0)
+            # idx = jnp.floor((jnp.array([0, 0.8]) - bounds[:,0]) / grid_width)
+            # idx = jnp.array([(_sizes[1] - 1) - idx[1],idx[0]])
+            # idx = jnp.clip(idx, 0, _sizes - 1).astype(jnp.int32)
+            # global_memory = global_memory.at[idx[0], idx[1]].set(0)
             # global_memory = global_memory.at[idx[0]+1, idx[1]+1].set(0)
             # global_memory = global_memory.at[idx[0]-1, idx[1]-1].set(0)
 
         # while viewer.is_running():
-        for iter in tqdm(range(501)):
+        for iter in tqdm(range(101)):
         
             start_time = time.time()
 
@@ -226,10 +226,10 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
 
-            if iter%100 == 0 or iter in range(370,400):
+            if iter%10 == 0 or iter in range(30,50):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
 
-                im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=400)
+                im = ax.imshow(global_memory, cmap="Blues", vmin=-2, vmax=200)
 
                 for i in range(global_memory.shape[0]):
                     for j in range(global_memory.shape[1]):
@@ -256,7 +256,7 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
                     return i, j
 
                 ## draw goal
-                x, y = 0, 0.8
+                x, y = 0.025, 0.775
                 cx, cy = world_to_grid(x, y)
                 circle = patches.Circle((cx, cy), radius=0.2,
                                     facecolor="red")
@@ -269,44 +269,44 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
                 #   <geom name="leftwall"  size="0.01 0.2 0.2" type="box" pos="0.21 0.01 0"  rgba="0.6 0.6 0.6 0.8"/>
                 #   <geom name="rightwall" size="0.01 0.2 0.2" type="box" pos="-0.21 0.01 0" rgba="0.6 0.6 0.6 0.8"/>
 
-                # front
-                x, y = 0, 0.2,
-                sx, sy = 0.2, 0.01
-                cx, cy = world_to_grid(x, y)
-                width = (2 * sx) / grid_width[0]
-                height = (2 * sy) / grid_width[1]
-                front_rect = patches.Rectangle(
-                    (cx - width / 2, cy - height / 2),
-                    width, height,
-                    facecolor=(0.6, 0.6, 0.6, 0.8),
-                )
-                ax.add_patch(front_rect)
+                # # front
+                # x, y = 0, 0.2,
+                # sx, sy = 0.2, 0.01
+                # cx, cy = world_to_grid(x, y)
+                # width = (2 * sx) / grid_width[0]
+                # height = (2 * sy) / grid_width[1]
+                # front_rect = patches.Rectangle(
+                #     (cx - width / 2, cy - height / 2),
+                #     width, height,
+                #     facecolor=(0.6, 0.6, 0.6, 0.8),
+                # )
+                # ax.add_patch(front_rect)
 
-                # left
-                x, y = 0.21, 0.01
-                sx, sy = 0.01, 0.2
-                cx, cy = world_to_grid(x, y)
-                width = (2 * sx) / grid_width[0]
-                height = (2 * sy) / grid_width[1]
-                left_rect = patches.Rectangle(
-                    (cx - width / 2, cy - height / 2),
-                    width, height,
-                    facecolor=(0.6, 0.6, 0.6, 0.8),
-                )
-                ax.add_patch(left_rect)
+                # # left
+                # x, y = 0.21, 0.01
+                # sx, sy = 0.01, 0.2
+                # cx, cy = world_to_grid(x, y)
+                # width = (2 * sx) / grid_width[0]
+                # height = (2 * sy) / grid_width[1]
+                # left_rect = patches.Rectangle(
+                #     (cx - width / 2, cy - height / 2),
+                #     width, height,
+                #     facecolor=(0.6, 0.6, 0.6, 0.8),
+                # )
+                # ax.add_patch(left_rect)
 
-                # right
-                x, y = -0.21, 0.01
-                sx, sy = 0.01, 0.2
-                cx, cy = world_to_grid(x, y)
-                width = (2 * sx) / grid_width[0]
-                height = (2 * sy) / grid_width[1]
-                right_rect = patches.Rectangle(
-                    (cx - width / 2, cy - height / 2),
-                    width, height,
-                    facecolor=(0.6, 0.6, 0.6, 0.8),
-                )
-                ax.add_patch(right_rect)
+                # # right
+                # x, y = -0.21, 0.01
+                # sx, sy = 0.01, 0.2
+                # cx, cy = world_to_grid(x, y)
+                # width = (2 * sx) / grid_width[0]
+                # height = (2 * sy) / grid_width[1]
+                # right_rect = patches.Rectangle(
+                #     (cx - width / 2, cy - height / 2),
+                #     width, height,
+                #     facecolor=(0.6, 0.6, 0.6, 0.8),
+                # )
+                # ax.add_patch(right_rect)
 
                 rollout_states, nominal_trajectory_states = rollout_states
                 
@@ -355,6 +355,11 @@ def run_interactive_visualize_discrete(  # noqa: PLR0912, PLR0915
                     linewidth=5,
                     alpha=0.8
                 )
+                
+                ax.plot(path_points[:, 0],
+                        path_points[:, 1],
+                        'ro-', 
+                        linewidth=1, markersize=3)
 
                 ## draw all sampled paths
                 all_states = all_states.squeeze(0).squeeze(0)

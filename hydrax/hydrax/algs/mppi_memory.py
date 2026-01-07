@@ -158,23 +158,30 @@ class MPPIMemory(SamplingBasedController):
             heuristic_cost = global_memory[idx[0], idx[1]]
             return heuristic_cost
         
-    def update_heuristic(self, global_memory, state:jax.Array, value):
+    def update_heuristic(self, global_memory, global_memory_flag, state:jax.Array, value):
         if global_memory is None:
-            return None
+            return (None, None)
         else:
             idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
             idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
             idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
 
-            global_memory = jax.lax.cond(
-                global_memory[idx[0], idx[1]] == 0,
+            def update_func(args): # helper function for update memory and update flag
+                memory, flag = args
+                memory = memory.at[idx[0], idx[1]].max(value)
+                return (memory, flag)
+            
+            cond = ((global_memory[idx[0], idx[1]] < 0.01)| (global_memory_flag[idx[0], idx[1]] == 1)|(global_memory[idx[0], idx[1]]>=value))
+ 
+            (global_memory, global_memory_flag) = jax.lax.cond(
+                cond,
                 lambda op: op,
-                lambda op: op.at[idx[0], idx[1]].max(value),
-                global_memory,
+                update_func,
+                (global_memory, global_memory_flag),
             )
 
             # global_memory = global_memory.at[idx[0],idx[1]].max(value)
-            return global_memory
+            return (global_memory, global_memory_flag)
 
     def sample_knots(self, params: MPPIMemoryParams) -> Tuple[jax.Array, MPPIMemoryParams]:
         """Sample a control sequence."""
@@ -361,7 +368,6 @@ class MPPIMemory(SamplingBasedController):
             x = x.replace(ctrl=u)
             x = mjx.step(model, x)  # step model + compute site positions
             cost = self.dt * self.task.running_cost(x, u)
-            # cost = cost + self.density_cost(x, kde_memory, valid_count)
             sites = self.task.get_trace_sites(x)
             return x, (x, cost, sites)
         
@@ -444,19 +450,8 @@ class MPPIMemory(SamplingBasedController):
             final_cost = jax.vmap(self.terminal_cost,in_axes=[0,None])(final_state, global_memory)
             final_trace_sites = jax.vmap(self.task.get_trace_sites)(final_state)
 
-            # helper funciton to add heuristic to running cost for heuristic consistency
-            # def _running_cost_fn_with_h(
-            #     i, carry    
-            # ):
-            #     costs, states, global_memory = carry
-            #     costs = costs.at[i].set(costs[i] + jax.vmap(self.task.distance_cost)(states[i], states[i+1]))
-            #     return (costs, states, global_memory)
-            # costs, _, _ = jax.lax.fori_loop(0,costs.shape[0]-1, _running_cost_fn_with_h, (costs,states, global_memory))
-
             costs = jnp.append(costs, final_cost[:,None], axis=1)
             trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
-
-
 
         else:
             states = jax.tree_util.tree_map((lambda x: jnp.repeat(x[None, ...], self.num_samples, axis=0)), state)
@@ -468,31 +463,47 @@ class MPPIMemory(SamplingBasedController):
             costs = jnp.append(costs, final_cost[:,None],axis=1)
             trace_sites = jnp.append(trace_sites, final_trace_sites[:,None], axis=1)
 
+        B = states.xpos.shape[0]
+        # conver state to (B, T, state.sahpe)
+        state = jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, (B,) + x.shape), state)
+        state = jax.tree_util.tree_map(lambda x: x[:, None, ...],  state)
+
+        states = jax.tree_util.tree_map(lambda x0, x1: jnp.concatenate([x0, x1], axis=1), state, states) #append initial state to full states
+
         # helper function for updating heuristic
         def _fori_fn( 
             i, carry
         ):
-            global_memory, states, cumsum_costs = carry
+            global_memory, global_memory_flag, states, cumsum_costs = carry
             assert cumsum_costs.shape[0] == states.shape[0]
             new_h_value = cumsum_costs[i]
-            global_memory = self.update_heuristic(global_memory, states[i], new_h_value)
-            return (global_memory, states, cumsum_costs)
+            global_memory, global_memory_flag = self.update_heuristic(global_memory, global_memory_flag, states[i], new_h_value)
+            return (global_memory, global_memory_flag, states, cumsum_costs)
 
-        # update heuristic for initial state
+        # find idx of trajectory with minimal costs
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(sum_cost)
-        new_h_value = sum_cost[min_idx]
-        # new_h_value = sum_cost[min_idx] + self.terminal_cost(state, global_memory) - self.terminal_cost(states[min_idx][-1], global_memory)
-        global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
+
+        # only update heuristic for initial state
+        # new_h_value = sum_cost[min_idx]
+        # global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
 
         # update heuristic along lowest cost trajectory
         jnp_states = jax.vmap(self.state_selection_function)(states)
         best_trajectory_states = jnp_states[min_idx]
         best_trajectory_costs = costs[min_idx]
-        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1][:-1]
-        global_memory, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, best_trajectory_states, cumsum_costs))
+        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
 
-        best_trajectory_states = best_trajectory_states.at[0].set(self.state_selection_function(state))
+        global_memory_flag = None
+        if global_memory is not None:
+            global_memory_flag = jnp.zeros_like(global_memory)
+            last_state = best_trajectory_states[::-1][0]
+            idx = jnp.floor((last_state - self.bounds[:,0]) / self.grid_width)
+            idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
+            idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)  
+            global_memory_flag.at[idx[0],idx[1]].set(1) 
+
+        global_memory ,_, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory, global_memory_flag,best_trajectory_states[::-1], cumsum_costs[::-1]))
 
         return (best_trajectory_states, jnp_states), Trajectory(
             controls=controls,
