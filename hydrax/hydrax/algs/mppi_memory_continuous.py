@@ -21,14 +21,14 @@ from typing import Callable, Optional
 from flax import nnx
 
 class NeuralNet(nnx.Module):
-  def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs= nnx.Rngs(0)):
-    self.linear = nnx.Linear(din, dmid, rngs=rngs)
-    self.bn = nnx.BatchNorm(dmid, rngs=rngs)
-    self.dropout = nnx.Dropout(0.2, rngs=rngs)
+  def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs = nnx.Rngs(0)):
+    self.linear1 = nnx.Linear(din, dmid, rngs=rngs)
+    self.linear2 = nnx.Linear(dmid, dmid, rngs=rngs) 
     self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
 
   def __call__(self, x):
-    x = nnx.relu(self.dropout(self.bn(self.linear(x))))
+    x = nnx.relu(self.linear1(x))
+    x = nnx.relu(self.linear2(x))
     return self.linear_out(x)
 
 @dataclass
@@ -126,9 +126,9 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
 
         model = NeuralNet(din=2, dout=1)
-        self.graphdef, _ = nnx.split(model)
+        self.graphdef, self.nn_weight_template, self.static_state= nnx.split(model, nnx.Param,...)
         
-        self.nn_learning_rate = 1e-3
+        self.nn_learning_rate = 0#1e-3
 
     def sizes(self):
         return self._sizes
@@ -173,7 +173,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
             # heuristic_cost = global_memory[idx[0], idx[1]]
             #return heuristic_cost
 
-            model = nnx.merge(self.graphdef, global_memory)
+            model = nnx.merge(self.graphdef, global_memory, self.static_state)
             return model(state).squeeze() 
         
     def update_heuristic(self, global_memory, state:jax.Array, value):
@@ -201,21 +201,20 @@ class MPPIMemoryContinuous(SamplingBasedController):
             # # global_memory = global_memory.at[idx[0],idx[1]].max(value)
             # return (global_memory, global_memory_flag)
 
-            model = nnx.merge(self.graphdef, global_memory)
+            model = nnx.merge(self.graphdef, global_memory, self.static_state)
 
-            true_value = value
-            curr_value = self.heuristic_cost(state, global_memory)
-
-            def loss_fn(curr_value, true_value):
-                return (true_value - curr_value)**2
+            def loss_fn(m, state, value):
+                return ((value - m(state).squeeze())**2)
+            
+            grad_fn = nnx.grad(loss_fn)
     
-            grads = nnx.grad(loss_fn)(model, curr_value, true_value)
-            _, grads = nnx.split(grads)
+            grads = grad_fn(model, state, value)
+            _, weight_grads = nnx.split(grads)
 
             new_global_memory = jax.tree_util.tree_map(
             lambda weight, grad: weight - self.nn_learning_rate * grad, 
             global_memory, 
-            grads)   
+            weight_grads)   
 
             return new_global_memory
 
@@ -363,7 +362,10 @@ class MPPIMemoryContinuous(SamplingBasedController):
         )(self.model, states, controls, knots, global_memory)
 
         if global_memory is not None:
-            global_memory = jnp.max(global_memory_batch,axis=0)
+            # global_memory = jnp.max(global_memory_batch,axis=0)
+            # jax.debug.print("global_memory_batch shape:{}", global_memory_batch.shape)
+            global_memory = jax.tree_util.tree_map(lambda x: jnp.max(x,axis=0), global_memory_batch)
+            # global_memory = global_memory_batch
 
         # Combine the costs from different domain randomizations using the
         # specified risk strategy.
@@ -539,7 +541,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         #     idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)  
         #     global_memory_flag.at[idx[0],idx[1]].set(1) 
 
-        global_memory ,_, _, _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
+        global_memory, _ , _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
 
         return (best_trajectory_states, jnp_states), Trajectory(
             controls=controls,
