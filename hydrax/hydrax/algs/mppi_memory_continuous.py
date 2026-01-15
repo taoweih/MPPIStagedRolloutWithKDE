@@ -20,16 +20,115 @@ from typing import Callable, Optional
 
 from flax import nnx
 
-class NeuralNet(nnx.Module):
-  def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs = nnx.Rngs(0)):
-    self.linear1 = nnx.Linear(din, dmid, rngs=rngs)
-    self.linear2 = nnx.Linear(dmid, dmid, rngs=rngs) 
-    self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
+# class NeuralNet(nnx.Module):
+#   def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs = nnx.Rngs(0)):
+#     self.linear1 = nnx.Linear(din, dmid, rngs=rngs)
+#     self.linear2 = nnx.Linear(dmid, dmid, rngs=rngs) 
+#     self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
 
-  def __call__(self, x):
-    x = nnx.relu(self.linear1(x))
-    x = nnx.relu(self.linear2(x))
-    return self.linear_out(x)
+#   def __call__(self, x):
+#     x = nnx.swish(self.linear1(x))
+#     x = nnx.swish(self.linear2(x))
+#     return self.linear_out(x)
+
+class NeuralNet(nnx.Module):
+    def __init__(self, 
+                 din=2, 
+                 dmid=64, 
+                 dout=1, 
+                 use_hash_grid=True, 
+                 rngs: nnx.Rngs = nnx.Rngs(0)):
+        
+        self.din = din
+        self.use_hash_grid = use_hash_grid
+
+        #### Positional encoding ####
+        self.num_freqs = 12
+        
+        #### Hash Grid Config ########
+        self.num_levels = 16
+        self.table_size = 4096
+        self.features_per_level = 2
+
+        if self.use_hash_grid:
+            self.resolutions = jnp.exp(
+                jnp.linspace(jnp.log(16), jnp.log(2048), self.num_levels)
+            )
+
+            self.embeddings = nnx.Param(
+                jax.random.uniform(rngs.params(), (self.num_levels, self.table_size, self.features_per_level)) * 1e-4
+            )
+            self.primes = jnp.array([1, 2654435761], dtype=jnp.uint32) # primes for hash function
+            
+            input_dim = self.num_levels * self.features_per_level
+            
+        else:
+            input_dim = self.din * self.num_freqs * 2
+
+        self.linear1 = nnx.Linear(input_dim, dmid, rngs=rngs)
+        self.linear2 = nnx.Linear(dmid, dmid, rngs=rngs)
+        self.linear3 = nnx.Linear(dmid, dmid, rngs=rngs)
+        self.linear4 = nnx.Linear(dmid, dmid, rngs=rngs)
+        self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
+
+    def __call__(self, x):
+        is_unbatched = x.ndim == 1
+        if is_unbatched:
+            x = x[None, ...] 
+        
+        if self.use_hash_grid:
+            x_norm = (x + 1.0) * 0.5 # shift grid from [-1,1] to [0,1]
+            
+            def process_level(embedding_subtable, resolution, x_in):
+                x_grid = x_in * resolution
+                x0 = jnp.floor(x_grid).astype(jnp.int32)
+                w = x_grid - x0
+                
+                offsets = jnp.array([[0,0], [1,0], [0,1], [1,1]])
+                grid_coords = x0[:, None, :] + offsets[None, :, :]
+                hashed_indices = ((grid_coords * self.primes).sum(axis=-1)) % self.table_size
+                corners = embedding_subtable[hashed_indices]
+                
+                wx, wy = w[..., 0:1], w[..., 1:2] 
+
+                top_value = (1 - wx) * corners[:, 0] + wx * corners[:, 1]
+                bottom_value = (1 - wx) * corners[:, 2] + wx * corners[:, 3]
+                value = (1 - wy) * top_value + wy * bottom_value
+
+                return value
+
+            features = jax.vmap(process_level, in_axes=(0, 0, None))(
+                self.embeddings.value, 
+                self.resolutions, 
+                x_norm
+            )
+            features = jnp.transpose(features, (1, 0, 2))
+            batch_size = features.shape[0]
+            encoded_input = features.reshape(batch_size, -1)
+            
+        else:
+            freqs = 2.0 ** jnp.arange(self.num_freqs)
+        
+            inputs = x[..., None] * freqs # (B, din, num_freqs)
+        
+            sin_inputs = jnp.sin(inputs * jnp.pi)
+            cos_inputs = jnp.cos(inputs * jnp.pi)
+        
+            encoded_input = jnp.concatenate([sin_inputs, cos_inputs], axis=-1)
+            encoded_input = encoded_input.reshape(x.shape[0], -1)
+
+
+        ##### MLP pass #####
+        x_out = nnx.swish(self.linear1(encoded_input))
+        x_out = nnx.swish(self.linear2(x_out))
+        # x_out = nnx.swish(self.linear3(x_out))
+        # x_out = nnx.swish(self.linear4(x_out))
+        output = self.linear_out(x_out)
+
+        if is_unbatched:
+            return output.squeeze(0)
+            
+        return output
 
 @dataclass
 class MPPIMemoryContinuousParams(SamplingParams):
@@ -68,6 +167,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         num_knots: int = 4,
         iterations: int = 1,
         state_selection_function: Optional[Callable[[mjx.Data], jax.Array]] = None,
+        use_hash_grid: bool = True,
     ) -> None:
         """Initialize the controller.
 
@@ -124,11 +224,11 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         # self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
 
-
-        model = NeuralNet(din=2, dout=1)
+        self.use_hash_grid = use_hash_grid
+        model = NeuralNet(din=2, dout=1, use_hash_grid= self.use_hash_grid)
         self.graphdef, self.nn_weight_template, self.static_state= nnx.split(model, nnx.Param,...)
         
-        self.nn_learning_rate = 0#1e-3
+        self.nn_learning_rate = 1e-3
 
     def sizes(self):
         return self._sizes
@@ -150,8 +250,9 @@ class MPPIMemoryContinuous(SamplingBasedController):
         else:
             jnp_state = self.state_selection_function(state)
             heuristic_cost = self.heuristic_cost(jnp_state, global_memory)
-            # default_cost = self.task.terminal_cost(state)
+            default_cost = self.task.terminal_cost(state)
             return heuristic_cost
+            # return default_cost
 
             # return jnp.maximum(heuristic_cost, default_cost) # if update only when accessed (lazy update)
            
@@ -176,47 +277,127 @@ class MPPIMemoryContinuous(SamplingBasedController):
             model = nnx.merge(self.graphdef, global_memory, self.static_state)
             return model(state).squeeze() 
         
-    def update_heuristic(self, global_memory, state:jax.Array, value):
+    def update_heuristic(self, global_memory, state: jax.Array, value: jax.Array):
         if global_memory is None:
             return None
-        else:
-            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            # idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
-            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)   
+        
+        model = nnx.merge(self.graphdef, global_memory, self.static_state)
 
-            # def update_func(args): # helper function for update memory and update flag
-            #     memory, flag = args
-            #     memory = memory.at[idx[0], idx[1]].max(value)
-            #     return (memory, flag)
+        if state.ndim == 1:
+            state = state[None, ...]
+            value = value[None, ...] 
+
+        rng = jax.random.PRNGKey(42) 
+        num_anchors = 10000
+        anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=-1.0, maxval=1.0)
+        anchor_targets = model(anchor_states).squeeze()
+
+        all_states = jnp.concatenate([state, anchor_states], axis=0)
+        all_targets = jnp.concatenate([value, anchor_targets], axis=0)
+
+        B_new = state.shape[0]
+        B_anchor = num_anchors
+        weights = jnp.concatenate([jnp.ones(B_new) * 100.0, jnp.ones(B_anchor) * 1.0], axis=0)
+
+        def loss_fn(m, x, y, w):
+            pred = m(x).squeeze()
+            error = (pred - y) ** 2
+            return jnp.mean(error * w)
+        
+        grad_fn = nnx.grad(loss_fn)
+        grads = grad_fn(model, all_states, all_targets, weights)
+        _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
+
+        def update_rule(path, weight, grad):
+            #using positional encoding
+            if not self.use_hash_grid:
+                return weight - self.nn_learning_rate*0.01 * grad
+
+            # using hashgrid 
+            def get_name(k):
+                return getattr(k, 'name', getattr(k, 'key', str(k)))
+
+            is_embedding = any(get_name(k) == 'embeddings' for k in path)
             
-            # cond = ((global_memory[idx[0], idx[1]] < 0.01)| (global_memory_flag[idx[0], idx[1]] == 1)|(global_memory[idx[0], idx[1]]>=value))
- 
-            # (global_memory, global_memory_flag) = jax.lax.cond(
-            #     cond,
-            #     lambda op: op,
-            #     update_func,
-            #     (global_memory, global_memory_flag),
-            # )
+            if is_embedding:
+                return weight - self.nn_learning_rate * grad 
+            else:
+                return weight - (self.nn_learning_rate * 0.01) * grad
 
-            # # global_memory = global_memory.at[idx[0],idx[1]].max(value)
-            # return (global_memory, global_memory_flag)
-
-            model = nnx.merge(self.graphdef, global_memory, self.static_state)
-
-            def loss_fn(m, state, value):
-                return ((value - m(state).squeeze())**2)
-            
-            grad_fn = nnx.grad(loss_fn)
-    
-            grads = grad_fn(model, state, value)
-            _, weight_grads = nnx.split(grads)
-
-            new_global_memory = jax.tree_util.tree_map(
-            lambda weight, grad: weight - self.nn_learning_rate * grad, 
+        new_global_memory = jax.tree_util.tree_map_with_path(
+            update_rule, 
             global_memory, 
-            weight_grads)   
+            weight_grads
+        )
 
-            return new_global_memory
+        return new_global_memory
+        
+    # def update_heuristic(self, global_memory, state: jax.Array, value: jax.Array):
+    #     if global_memory is None:
+    #         return None
+        
+    #     model = nnx.merge(self.graphdef, global_memory, self.static_state)
+
+    #     if state.ndim == 1:
+    #         state = state[None, ...]
+    #         value = value[None, ...] 
+
+    #     rng = jax.random.PRNGKey(42) 
+    #     num_anchors = 10000
+    #     anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=-1.0, maxval=1.0)
+    #     anchor_targets = model(anchor_states).squeeze()
+
+    #     all_states = jnp.concatenate([state, anchor_states], axis=0)
+    #     all_targets = jnp.concatenate([value, anchor_targets], axis=0)
+
+    #     B_new = state.shape[0]
+    #     B_anchor = num_anchors
+    #     weights = jnp.concatenate([jnp.ones(B_new) * 10.0, jnp.ones(B_anchor) * 1.0], axis=0)
+
+    #     def loss_fn(m, x, y, w):
+    #         pred = m(x).squeeze()
+    #         error = (pred - y) ** 2
+    #         return jnp.mean(error * w)
+        
+    #     grad_fn = nnx.grad(loss_fn)
+
+    #     grads = grad_fn(model, all_states, all_targets, weights)
+    #     _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
+
+    #     new_global_memory = jax.tree_util.tree_map(
+    #     lambda weight, grad: weight - self.nn_learning_rate * grad, 
+    #     global_memory, 
+    #     weight_grads)   
+
+    #     return new_global_memory
+        
+    # def update_heuristic(self, global_memory, state: jax.Array, value: jax.Array):
+    #     if global_memory is None:
+    #         return None
+    #     else:
+    #         model = nnx.merge(self.graphdef, global_memory, self.static_state)
+
+    #         if state.ndim == 1:
+    #             state = state[None, ...]
+    #             value = value[None, ...] 
+            
+    #         def loss_fn(m, x, y):
+    #             pred = m(x).squeeze()
+    #             error = (pred - y) ** 2
+    #             return jnp.mean(error)
+            
+    #         grad_fn = nnx.grad(loss_fn)
+    
+    #         grads = grad_fn(model, state, value)
+    #         _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
+
+    #         new_global_memory = jax.tree_util.tree_map(
+    #             lambda weight, grad: weight - self.nn_learning_rate * grad, 
+    #             global_memory, 
+    #             weight_grads
+    #         )
+
+    #         return new_global_memory
 
     def sample_knots(self, params: MPPIMemoryContinuousParams) -> Tuple[jax.Array, MPPIMemoryContinuousParams]:
         """Sample a control sequence."""

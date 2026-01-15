@@ -220,22 +220,28 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
 
         global_memory = controller.nn_weight_template
             
-        bounds = jnp.array([[-1.0, 1.0], [-1.0, 1.0]]) 
-        resolution = 100
-        x = jnp.linspace(bounds[0, 0], bounds[0, 1], resolution)
-        y = jnp.linspace(bounds[1, 0], bounds[1, 1], resolution)
-        XX, YY = jnp.meshgrid(x, y)
+        # bounds = jnp.array([[-1.0, 1.0], [-1.0, 1.0]]) 
+        # resolution = 100
+        # x = jnp.linspace(bounds[0, 0], bounds[0, 1], resolution)
+        # y = jnp.linspace(bounds[1, 0], bounds[1, 1], resolution)
+        # XX, YY = jnp.meshgrid(x, y)
 
-        grid_inputs = jnp.stack([XX.flatten(), YY.flatten()], axis=1) #shape: (N, 2)
-        jax.debug.print("grid_inputs shape: {}", grid_inputs.shape)
+        # grid_inputs = jnp.stack([XX.flatten(), YY.flatten()], axis=1) #shape: (N, 2)
+        # jax.debug.print("grid_inputs shape: {}", grid_inputs.shape)
+
+        num_starting = 100000
+        grid_inputs = jax.random.uniform(jax.random.PRNGKey(52) , (num_starting, 2), minval=-1.0, maxval=1.0)
 
 
         def get_true_cost(qpos):
             d = mjx.make_data(controller.task.model)
             d = d.replace(qpos=qpos)
+            d = mjx.kinematics(controller.task.model, d)
             return controller.task.terminal_cost(d)
 
         grid_targets = jax.vmap(get_true_cost)(grid_inputs)
+        # jax.debug.print("grid_targets sample: {}", grid_targets[5000:5010])
+
 
         model = nnx.merge(controller.graphdef, global_memory, controller.static_state)
 
@@ -254,7 +260,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
                 
             return loss_fn(model)
 
-        for i in range(150):
+        for i in range(1000):
             loss = train_step(model, grid_inputs, grid_targets, optimizer)
             if i % 10 == 0:
                 print(f"Iter {i}, Loss: {loss:.4f}")
@@ -263,8 +269,8 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         
         #############################################################################
 
-        while viewer.is_running():
-        # for iter in tqdm(range(101)):
+        # while viewer.is_running():
+        for iter in tqdm(range(501)):
         
             start_time = time.time()
 
@@ -281,6 +287,72 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
+            if iter%50 == 0 : # plotting 
+                bounds = jnp.array([[-1.0, 1.0], [-1.0, 1.0]]) 
+                resolution = 1000
+                x = jnp.linspace(bounds[0, 0], bounds[0, 1], resolution)
+                y = jnp.linspace(bounds[1, 0], bounds[1, 1], resolution)
+                XX, YY = jnp.meshgrid(x, y)
+
+                grid_inputs = jnp.stack([XX.flatten(), YY.flatten()], axis=1) #shape: (N, 2)
+
+                eval_model = nnx.merge(controller.graphdef, global_memory, controller.static_state)
+                preds = eval_model(grid_inputs).squeeze()
+                image = preds.reshape(resolution, resolution)
+
+                fig, ax = plt.subplots(figsize=(20, 20), dpi=100)
+                
+                im = ax.imshow(image, origin='lower', extent=[-1, 1, -1, 1], cmap="Blues", vmin=-2, vmax=200)
+                    
+                plt.colorbar(im, ax=ax, label='Predicted Cost')
+                ax.set_title(f"Learned Cost Landscape")
+                ax.set_xlabel("X")
+                ax.set_ylabel("Y")
+
+                # extract current states
+                rollout_states, nominal_trajectory_states = rollout_states
+                heuristic_states, all_states = rollout_states
+
+                # draw sampled trajectories
+                all_states = all_states.squeeze(0).squeeze(0)
+                for i in range(all_states.shape[0]):
+                    one_trajectory_states = all_states[i]
+                    path_points = []
+                    for s in one_trajectory_states:
+                        path_points.append((s[0], s[1]))
+
+                    path_points = np.array(path_points)
+
+                    if i % 20 == 0:
+                        ax.plot(
+                            path_points[:, 0],
+                            path_points[:, 1],
+                            color="black",
+                            linewidth=1,
+                            alpha=0.5
+                        )
+
+                # draw goal location
+                ax.plot(0.025, 0.775, 'ro', markersize=10, label='Goal')
+
+                # draw start location
+                jnp_location_start = heuristic_states.squeeze(0).squeeze(0)[0]
+                ax.plot(jnp_location_start[0], jnp_location_start[1], 'go', markersize=10, label='Current')
+
+
+
+                # draw walls
+                front_wall = patches.Rectangle((-0.2, 0.19), 0.4, 0.02, linewidth=1, edgecolor='black', facecolor='gray')
+                ax.add_patch(front_wall)
+
+                left_wall = patches.Rectangle((0.20, -0.19), 0.02, 0.4, linewidth=1, edgecolor='black', facecolor='gray')
+                ax.add_patch(left_wall)
+
+                right_wall = patches.Rectangle((-0.22, -0.19), 0.02, 0.4, linewidth=1, edgecolor='black', facecolor='gray')
+                ax.add_patch(right_wall)
+
+                plt.savefig(f"cost_landscape_{iter}.png")
+                plt.close(fig)
 
             if False: #iter%10 == 0 or iter in range(30,50):
                 fig, ax = plt.subplots(figsize=(40,40), dpi=400)
