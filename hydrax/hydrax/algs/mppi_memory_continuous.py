@@ -292,12 +292,20 @@ class MPPIMemoryContinuous(SamplingBasedController):
         anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=-1.0, maxval=1.0)
         anchor_targets = model(anchor_states).squeeze()
 
-        all_states = jnp.concatenate([state, anchor_states], axis=0)
-        all_targets = jnp.concatenate([value, anchor_targets], axis=0)
+        # hard set goal state
+        goal_state = jnp.array([[0.025, 0.775]]) 
+        goal_target = jnp.array([0.0]) 
+        goal_weight = jnp.array([200.0])
+
+        all_states = jnp.concatenate([state, anchor_states, goal_state], axis=0)
+        all_targets = jnp.concatenate([value, anchor_targets, goal_target], axis=0)
+        # all_states = state
+        # all_targets = value
 
         B_new = state.shape[0]
         B_anchor = num_anchors
-        weights = jnp.concatenate([jnp.ones(B_new) * 100.0, jnp.ones(B_anchor) * 1.0], axis=0)
+        weights = jnp.concatenate([jnp.ones(B_new) * 100.0, jnp.ones(B_anchor) * 1.0, goal_weight], axis=0)
+        # weights = jnp.ones(B_new)
 
         def loss_fn(m, x, y, w):
             pred = m(x).squeeze()
@@ -322,7 +330,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
             if is_embedding:
                 return weight - self.nn_learning_rate * grad 
             else:
-                return weight - (self.nn_learning_rate * 0.01) * grad
+                return weight - (self.nn_learning_rate * 0) * grad
 
         new_global_memory = jax.tree_util.tree_map_with_path(
             update_rule, 
