@@ -30,21 +30,32 @@ class Ant(Task):
         )
 
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
-        end_effector_pos = state.xpos[self.end_effector_pos_id]
-        goal_pos = state.xpos[self.goal_pos_id]
+        xy_velocity = state.qvel[:2]
+        speed = jnp.sqrt(jnp.sum(jnp.square(xy_velocity)))
+        distance_cost = speed * 0.01
 
-        height_cost = jnp.square(0.75 -state.xpos[self.end_effector_pos_id, 2])
+        ctrl_cost = 0.5 * jnp.sum(jnp.square(control))
+        
+        contact_forces = jnp.clip(state.qfrc_constraint, -1.0, 1.0)
+        contact_cost = 5e-4 * jnp.sum(jnp.square(contact_forces))
+        
+        z_pos = state.xpos[self.end_effector_pos_id, 2]
+        is_healthy = jnp.logical_and(z_pos >= 0.4, z_pos <= 0.8)
+        healthy_reward = 5.0 * is_healthy.astype(jnp.float32)
 
-        R = state.xmat[self.end_effector_pos_id].reshape(3, 3)
-        tilt_err = 1.0 - R[2, 2]
-        tilt_cost = tilt_err ** 2
-
-        cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0) + 20*height_cost + 10*tilt_cost
+        torso_z_axis = state.xmat[self.end_effector_pos_id][8]
+        orientation_cost = 3.0 * jnp.square(1.0 - torso_z_axis)
+        
+        cost = distance_cost +ctrl_cost +contact_cost-healthy_reward + orientation_cost
+        
         return cost
-
+    
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
         """The terminal cost ϕ(x_T)."""
-        return self.running_cost(state, jnp.zeros(self.model.nu))
+        end_effector_pos = state.xpos[self.end_effector_pos_id]
+        goal_pos = state.xpos[self.goal_pos_id]
+        distance_cost = jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0)
+        return distance_cost
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomize the friction parameters."""

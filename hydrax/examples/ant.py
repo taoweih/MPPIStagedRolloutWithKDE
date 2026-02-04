@@ -17,10 +17,10 @@ if __name__ == "__main__":
     ctrl = MPPI(
         task,
         num_samples=512,
-        noise_level=2.0,
+        noise_level=0.4,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=2.0,
+        plan_horizon=0.2,
         spline_type="zero",
         num_knots=16,
     )
@@ -49,6 +49,6 @@ if __name__ == "__main__":
             mj_model,
             mj_data,
             frequency=50,
-            show_traces=True,
+            show_traces=False,
             record_video=False,
         )
