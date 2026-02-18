@@ -659,6 +659,10 @@ if __name__ == "__main__":
         kde_bandwidth=0.1,
         # state_weight=jnp.array([1,1,0])
         state_selection_function= state_selection_function,
+        grid_min=-1.0,
+        grid_max=1.0,
+        online_learning_rate = 1e-3,
+        goal_position = jnp.array([[0.025, 0.775]]),
     )
         
 

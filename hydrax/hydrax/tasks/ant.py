@@ -32,7 +32,7 @@ class Ant(Task):
     def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
         xy_velocity = state.qvel[:2]
         speed = jnp.sqrt(jnp.sum(jnp.square(xy_velocity)))
-        distance_cost = speed * 0.01
+        distance_cost = speed
 
         ctrl_cost = 0.5 * jnp.sum(jnp.square(control))
         
@@ -46,7 +46,7 @@ class Ant(Task):
         torso_z_axis = state.xmat[self.end_effector_pos_id][8]
         orientation_cost = 3.0 * jnp.square(1.0 - torso_z_axis)
         
-        cost = distance_cost +ctrl_cost +contact_cost-healthy_reward + orientation_cost
+        cost = distance_cost + contact_cost#+ctrl_cost +contact_cost-healthy_reward + orientation_cost
         
         return cost
     

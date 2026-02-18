@@ -37,10 +37,15 @@ class NeuralNet(nnx.Module):
                  dmid=64, 
                  dout=1, 
                  use_hash_grid=True, 
+                 grid_min = -10.0,
+                 grid_max = 10.0,
                  rngs: nnx.Rngs = nnx.Rngs(0)):
         
         self.din = din
         self.use_hash_grid = use_hash_grid
+
+        self.grid_min = grid_min
+        self.grid_max = grid_max
 
         #### Positional encoding ####
         self.num_freqs = 12
@@ -77,7 +82,8 @@ class NeuralNet(nnx.Module):
             x = x[None, ...] 
         
         if self.use_hash_grid:
-            x_norm = (x + 1.0) * 0.5 # shift grid from [-1,1] to [0,1]
+            # x_norm = (x + 1.0) * 0.5 # shift grid from [-1,1] to [0,1]
+            x_norm = (x - self.grid_min) / (self.grid_max - self.grid_min)
             
             def process_level(embedding_subtable, resolution, x_in):
                 x_grid = x_in * resolution
@@ -167,7 +173,12 @@ class MPPIMemoryContinuous(SamplingBasedController):
         num_knots: int = 4,
         iterations: int = 1,
         state_selection_function: Optional[Callable[[mjx.Data], jax.Array]] = None,
+
         use_hash_grid: bool = True,
+        grid_min = -10.0,
+        grid_max = 10.0,
+        online_learning_rate = 1e-3,
+        goal_position = jnp.array([[0, 0]]),
     ) -> None:
         """Initialize the controller.
 
@@ -217,18 +228,14 @@ class MPPIMemoryContinuous(SamplingBasedController):
         else:
             self.state_selection_function = state_selection_function
 
-        # self.bounds = jnp.array([[-1, 1],   # x
-        #             [-1, 1]],  # y 
-        #            dtype=jnp.float32)
-        # self.grid_width = jnp.array([0.05, 0.05], dtype=jnp.float32) 
-
-        # self._sizes = jnp.ceil((self.bounds[:,1] - self.bounds[:,0]) / self.grid_width).astype(int) 
-
+        self.grid_min = grid_min
+        self.grid_max = grid_max
         self.use_hash_grid = use_hash_grid
-        model = NeuralNet(din=2, dout=1, use_hash_grid= self.use_hash_grid)
+        model = NeuralNet(din=2, dout=1, use_hash_grid= self.use_hash_grid, grid_min=self.grid_min, grid_max=self.grid_max)
         self.graphdef, self.nn_weight_template, self.static_state= nnx.split(model, nnx.Param,...)
-        
-        self.nn_learning_rate = 1e-3
+        self.nn_learning_rate = online_learning_rate
+
+        self.goal_position = goal_position
 
     def sizes(self):
         return self._sizes
@@ -252,28 +259,12 @@ class MPPIMemoryContinuous(SamplingBasedController):
             heuristic_cost = self.heuristic_cost(jnp_state, global_memory)
             default_cost = self.task.terminal_cost(state)
             return heuristic_cost
-            # return default_cost
-
-            # return jnp.maximum(heuristic_cost, default_cost) # if update only when accessed (lazy update)
-           
-            # jax.debug.print("hcost:{}",heuristic_cost)
-            # new_cost = jnp.where(heuristic_cost==0, default_cost,heuristic_cost)
-            # global_memory_updated = self.update_heuristic(global_memory, jnp_state, new_cost)
-            # heuristic_cost = self.heuristic_cost(jnp_state, global_memory_updated)
-            # return heuristic_cost, global_memory_updated
-            
+            # return default_cost      
     
     def heuristic_cost(self, state:jax.Array, global_memory):
         if global_memory is None:
             return 0
         else:
-        
-            # idx = jnp.floor((state - self.bounds[:,0]) / self.grid_width)
-            # idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
-            # idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)
-            # heuristic_cost = global_memory[idx[0], idx[1]]
-            #return heuristic_cost
-
             model = nnx.merge(self.graphdef, global_memory, self.static_state)
             return model(state).squeeze() 
         
@@ -289,11 +280,11 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         rng = jax.random.PRNGKey(42) 
         num_anchors = 10000
-        anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=-1.0, maxval=1.0)
+        anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=self.grid_min, maxval=self.grid_max)
         anchor_targets = model(anchor_states).squeeze()
 
         # hard set goal state
-        goal_state = jnp.array([[0.025, 0.775]]) 
+        goal_state = self.goal_position
         goal_target = jnp.array([0.0]) 
         goal_weight = jnp.array([200.0])
 
@@ -309,7 +300,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         def loss_fn(m, x, y, w):
             pred = m(x).squeeze()
-            error = (pred - y) ** 2
+            error =  jnp.maximum(y - pred, 0.0) ** 2#(pred - y) ** 2
             return jnp.mean(error * w)
         
         grad_fn = nnx.grad(loss_fn)
@@ -317,7 +308,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
 
         def update_rule(path, weight, grad):
-            #using positional encoding
+            # using positional encoding
             if not self.use_hash_grid:
                 return weight - self.nn_learning_rate*0.01 * grad
 
@@ -339,73 +330,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         )
 
         return new_global_memory
-        
-    # def update_heuristic(self, global_memory, state: jax.Array, value: jax.Array):
-    #     if global_memory is None:
-    #         return None
-        
-    #     model = nnx.merge(self.graphdef, global_memory, self.static_state)
-
-    #     if state.ndim == 1:
-    #         state = state[None, ...]
-    #         value = value[None, ...] 
-
-    #     rng = jax.random.PRNGKey(42) 
-    #     num_anchors = 10000
-    #     anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=-1.0, maxval=1.0)
-    #     anchor_targets = model(anchor_states).squeeze()
-
-    #     all_states = jnp.concatenate([state, anchor_states], axis=0)
-    #     all_targets = jnp.concatenate([value, anchor_targets], axis=0)
-
-    #     B_new = state.shape[0]
-    #     B_anchor = num_anchors
-    #     weights = jnp.concatenate([jnp.ones(B_new) * 10.0, jnp.ones(B_anchor) * 1.0], axis=0)
-
-    #     def loss_fn(m, x, y, w):
-    #         pred = m(x).squeeze()
-    #         error = (pred - y) ** 2
-    #         return jnp.mean(error * w)
-        
-    #     grad_fn = nnx.grad(loss_fn)
-
-    #     grads = grad_fn(model, all_states, all_targets, weights)
-    #     _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
-
-    #     new_global_memory = jax.tree_util.tree_map(
-    #     lambda weight, grad: weight - self.nn_learning_rate * grad, 
-    #     global_memory, 
-    #     weight_grads)   
-
-    #     return new_global_memory
-        
-    # def update_heuristic(self, global_memory, state: jax.Array, value: jax.Array):
-    #     if global_memory is None:
-    #         return None
-    #     else:
-    #         model = nnx.merge(self.graphdef, global_memory, self.static_state)
-
-    #         if state.ndim == 1:
-    #             state = state[None, ...]
-    #             value = value[None, ...] 
-            
-    #         def loss_fn(m, x, y):
-    #             pred = m(x).squeeze()
-    #             error = (pred - y) ** 2
-    #             return jnp.mean(error)
-            
-    #         grad_fn = nnx.grad(loss_fn)
-    
-    #         grads = grad_fn(model, state, value)
-    #         _, weight_grads, _ = nnx.split(grads, nnx.Param, ...)
-
-    #         new_global_memory = jax.tree_util.tree_map(
-    #             lambda weight, grad: weight - self.nn_learning_rate * grad, 
-    #             global_memory, 
-    #             weight_grads
-    #         )
-
-    #         return new_global_memory
+        # return global_memory
 
     def sample_knots(self, params: MPPIMemoryContinuousParams) -> Tuple[jax.Array, MPPIMemoryContinuousParams]:
         """Sample a control sequence."""
@@ -720,16 +645,6 @@ class MPPIMemoryContinuous(SamplingBasedController):
         best_trajectory_states = jnp_states[min_idx]
         best_trajectory_costs = costs[min_idx]
         cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
-
-        # global_memory_flag = None
-        # if global_memory is not None:
-        #     global_memory_flag = jnp.zeros_like(global_memory)
-        #     last_state = best_trajectory_states[::-1][0]
-        #     idx = jnp.floor((last_state - self.bounds[:,0]) / self.grid_width)
-        #     idx = jnp.array([(self._sizes[1] - 1) - idx[1],idx[0]])
-        #     idx = jnp.clip(idx, 0, self._sizes - 1).astype(jnp.int32)  
-        #     global_memory_flag.at[idx[0],idx[1]].set(1) 
-
         global_memory, _ , _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
 
         return (best_trajectory_states, jnp_states), Trajectory(
