@@ -142,6 +142,17 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             viewer.cam.fixedcamid = fixed_camera_id
             viewer.cam.type = 2
 
+        # Free camera: start bottom-left, goal top-right, slightly top-down
+        viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+
+        # Center between start (0,0) and goal (6,6)
+        viewer.cam.lookat[:] = np.array([3.0, 3.0, 0.6])
+
+        # More top-down but still oblique
+        viewer.cam.azimuth = 45.0        # makes +x go right, +y go up (typical)
+        viewer.cam.elevation = -55.0     # steeper top-down (not fully top-down)
+        viewer.cam.distance = 18.0       # adjust 16–22 depending on framing
+
         # Set up rollout traces
         if show_traces:
             num_trace_sites = len(controller.task.trace_site_ids)
@@ -210,8 +221,8 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         
         #############################################################################
 
-        # while viewer.is_running():
-        for iter in tqdm(range(5001)): 
+        while viewer.is_running():
+        # for iter in tqdm(range(2001)): 
         
             start_time = time.time()
 
@@ -228,7 +239,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
-            if iter % 200 == 0:  # plotting
+            if False:#iter % 200 == 0:  # plotting
                 # Obstacle and goal definitions from scene.xml
                 obstacle_positions = [
                     (0, 2), (2, 0), (3, 4), (2, 6),
@@ -254,7 +265,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
                 im = ax.imshow(
                     image, origin='lower',
                     extent=[pb[0], pb[1], pb[0], pb[1]],
-                    cmap="Blues", vmin=0, vmax=150
+                    cmap="Blues", vmin=0, vmax=100
                 )
 
                 plt.colorbar(im, ax=ax, label='Predicted Cost')
@@ -456,7 +467,7 @@ if __name__ == "__main__":
             mj_data,
             frequency=50,
             show_traces=False,
-            record_video=False,
+            record_video=True,
         )
 
     # run_interactive(
