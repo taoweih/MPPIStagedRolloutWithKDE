@@ -22,9 +22,9 @@
     <geom name="obstacle8" type="capsule" pos="2  5  1" size="0.3 1" rgba="0.6 0.6 0.6 1" contype="2" conaffinity="4"/>
   </worldbody>
 
-  <worldbody>
+  <!-- <worldbody>
     <site type="box" size="10 10 0.1" rgba="0.5 0.5 0.5 0.4"  />
-  </worldbody>
+  </worldbody> -->
 
   <visual>
     <headlight diffuse="1 1 1" ambient="0.3 0.3 0.3" specular="0 0 0"/>

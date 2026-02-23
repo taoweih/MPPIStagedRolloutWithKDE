@@ -271,6 +271,17 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 viewer.cam.fixedcamid = fixed_camera_id
                 viewer.cam.type = 2
 
+            # # Free camera: start bottom-left, goal top-right, slightly top-down
+            # viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+
+            # # Center between start (0,0) and goal (6,6)
+            # viewer.cam.lookat[:] = np.array([3.0, 3.0, 0.6])
+
+            # # More top-down but still oblique
+            # viewer.cam.azimuth = 45.0        # makes +x go right, +y go up (typical)
+            # viewer.cam.elevation = -55.0     # steeper top-down (not fully top-down)
+            # viewer.cam.distance = 18.0       # adjust 16–22 depending on framing
+
             # Set up rollout traces
             if show_traces:
                 num_trace_sites = len(controller.task.trace_site_ids)
@@ -299,7 +310,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 global_memory = jnp.zeros(controller.sizes())
 
             while viewer.is_running():
-            # for iter in tqdm(range(5)):
+            # for iter in tqdm(range(3001)):
             
                 start_time = time.time()
 
@@ -386,13 +397,13 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
                     end="\r",
                 )
-            plt.figure()
-            plt.plot(cost_array)
-            # plt.ylim(9,13)
-            plt.xlabel("Iterations")
-            plt.ylabel("Current objective")
-            plt.title(f'Horizon: {controller.plan_horizon}s')
-            plt.show()
+            # plt.figure()
+            # plt.plot(cost_array)
+            # # plt.ylim(9,13)
+            # plt.xlabel("Iterations")
+            # plt.ylabel("Current objective")
+            # plt.title(f'Horizon: {controller.plan_horizon}s')
+            # plt.show()
 
     # Preserve the last printout
     print("")

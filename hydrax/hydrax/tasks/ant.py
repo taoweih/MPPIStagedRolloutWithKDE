@@ -48,7 +48,7 @@ class Ant(Task):
         upright = 1.0 - 2.0 * (x*x + y*y)         
         orientation_cost = jnp.square(1.0 - upright) 
 
-        cost = 10*distance_cost #+ 5*contact_cost + 20*orientation_cost  #+ 0.01 * ctrl_cost # - healthy_reward
+        cost = 10*distance_cost + 5*orientation_cost  #+ 5*contact_cost + 20*orientation_cost  #+ 0.01 * ctrl_cost # - healthy_reward
 
         return cost
     

@@ -221,8 +221,8 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         
         #############################################################################
 
-        while viewer.is_running():
-        # for iter in tqdm(range(2001)): 
+        # while viewer.is_running():
+        for iter in tqdm(range(3001)): 
         
             start_time = time.time()
 
@@ -239,7 +239,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts, rollout_states, new_global_memory= jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
-            if False:#iter % 200 == 0:  # plotting
+            if iter % 200 == 0:  # plotting
                 # Obstacle and goal definitions from scene.xml
                 obstacle_positions = [
                     (0, 2), (2, 0), (3, 4), (2, 6),
@@ -429,7 +429,7 @@ if __name__ == "__main__":
     ctrl = MPPIMemoryContinuous(
         task,
         num_samples=512,
-        noise_level=0.3,
+        noise_level=0.4,
         temperature=0.01,
         num_randomizations=1,
         plan_horizon=0.2,

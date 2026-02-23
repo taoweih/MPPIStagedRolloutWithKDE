@@ -50,5 +50,5 @@ if __name__ == "__main__":
             mj_data,
             frequency=50,
             show_traces=False,
-            record_video=False,
+            record_video=True,
         )

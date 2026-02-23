@@ -20,17 +20,6 @@ from typing import Callable, Optional
 
 from flax import nnx
 
-# class NeuralNet(nnx.Module):
-#   def __init__(self, din=2, dmid=64, dout=1, rngs: nnx.Rngs = nnx.Rngs(0)):
-#     self.linear1 = nnx.Linear(din, dmid, rngs=rngs)
-#     self.linear2 = nnx.Linear(dmid, dmid, rngs=rngs) 
-#     self.linear_out = nnx.Linear(dmid, dout, rngs=rngs)
-
-#   def __call__(self, x):
-#     x = nnx.swish(self.linear1(x))
-#     x = nnx.swish(self.linear2(x))
-#     return self.linear_out(x)
-
 class NeuralNet(nnx.Module):
     def __init__(self, 
                  din=2, 
@@ -63,7 +52,18 @@ class NeuralNet(nnx.Module):
             self.embeddings = nnx.Param(
                 jax.random.uniform(rngs.params(), (self.num_levels, self.table_size, self.features_per_level)) * 1e-4
             )
-            self.primes = jnp.array([1, 2654435761], dtype=jnp.uint32) # primes for hash function
+
+            if din == 2:
+                self.primes = jnp.array([1, 2654435761], dtype=jnp.uint32)
+            elif din == 3:
+                self.primes = jnp.array([1, 2654435761, 805459861], dtype=jnp.uint32)
+            else:
+                raise ValueError(f"din={din} not supported; use 2 or 3.")
+
+            self.offsets = jnp.array(
+                [[int(b) for b in format(i, f'0{din}b')] for i in range(2 ** din)],
+                dtype=jnp.int32,
+            )
             
             input_dim = self.num_levels * self.features_per_level
             
@@ -90,16 +90,14 @@ class NeuralNet(nnx.Module):
                 x0 = jnp.floor(x_grid).astype(jnp.int32)
                 w = x_grid - x0
                 
-                offsets = jnp.array([[0,0], [1,0], [0,1], [1,1]])
-                grid_coords = x0[:, None, :] + offsets[None, :, :]
-                hashed_indices = ((grid_coords * self.primes).sum(axis=-1)) % self.table_size
+                grid_coords = x0[:, None, :] + self.offsets[None, :, :]
+                hashed_indices = ((grid_coords.astype(jnp.uint32) * self.primes).sum(axis=-1)) % self.table_size
                 corners = embedding_subtable[hashed_indices]
-                
-                wx, wy = w[..., 0:1], w[..., 1:2] 
 
-                top_value = (1 - wx) * corners[:, 0] + wx * corners[:, 1]
-                bottom_value = (1 - wx) * corners[:, 2] + wx * corners[:, 3]
-                value = (1 - wy) * top_value + wy * bottom_value
+                off_f = self.offsets[None, :, :].astype(x_in.dtype)
+                per_dim = 1.0 - off_f + w[:, None, :] * (2.0 * off_f - 1.0)
+                corner_weights = jnp.prod(per_dim, axis=-1)
+                value = jnp.einsum('bc,bcf->bf', corner_weights, corners)
 
                 return value
 
