@@ -271,16 +271,19 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 viewer.cam.fixedcamid = fixed_camera_id
                 viewer.cam.type = 2
 
-            # # Free camera: start bottom-left, goal top-right, slightly top-down
+            # Ant
             # viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-
-            # # Center between start (0,0) and goal (6,6)
             # viewer.cam.lookat[:] = np.array([3.0, 3.0, 0.6])
+            # viewer.cam.azimuth = 45.0      
+            # viewer.cam.elevation = -55.0    
+            # viewer.cam.distance = 18.0      
 
-            # # More top-down but still oblique
-            # viewer.cam.azimuth = 45.0        # makes +x go right, +y go up (typical)
-            # viewer.cam.elevation = -55.0     # steeper top-down (not fully top-down)
-            # viewer.cam.distance = 18.0       # adjust 16–22 depending on framing
+            # UR5E
+            # viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            # viewer.cam.lookat[:] = np.array([0.0, 0.3, 0.3])
+            # viewer.cam.azimuth = 240.0
+            # viewer.cam.elevation = -45.0
+            # viewer.cam.distance = 2.5
 
             # Set up rollout traces
             if show_traces:
@@ -309,8 +312,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
             if hasattr(controller, "sizes"):
                 global_memory = jnp.zeros(controller.sizes())
 
-            while viewer.is_running():
-            # for iter in tqdm(range(3001)):
+            # while viewer.is_running():
+            for iter in tqdm(range(501)):
             
                 start_time = time.time()
 
@@ -397,6 +400,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     f"Realtime rate: {rtr:.2f}, plan time: {plan_time:.4f}s",
                     end="\r",
                 )
+
             # plt.figure()
             # plt.plot(cost_array)
             # # plt.ylim(9,13)
@@ -481,7 +485,7 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
     ### Wrap this to update param stored in controller
     _jit_optimize = jax.jit(controller.optimize)
     def jit_optimize(mjx_data, policy_params):
-        policy_params, rollouts = _jit_optimize(mjx_data, policy_params)
+        policy_params, rollouts, _, _ = _jit_optimize(mjx_data, policy_params)
         if hasattr(controller, 'params'):
             controller.params = policy_params
         return policy_params, rollouts
@@ -515,10 +519,11 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
     num_sucess = 0
     total_iteration = 0
 
-    number_of_iteration = 100
+    number_of_iteration = 1000
     number_of_trials = num_trials
 
     total_plan_time = 0
+    total_plan_steps = 0
     frequency = 0
 
     state_trajectories = np.zeros((number_of_trials,number_of_iteration)+ mj_data.qpos.shape)
@@ -576,7 +581,8 @@ def run_benchmark(  # noqa: PLR0912, PLR0915
             policy_params, rollouts = jit_optimize(mjx_data, policy_params)
             plan_time = time.time() - plan_start
             total_plan_time += plan_time
-            frequency = ((i*(number_of_iteration)+j)/total_plan_time)
+            total_plan_steps += 1
+            frequency = (total_plan_steps/total_plan_time)
 
             # Update the ghost reference
             if reference is not None:

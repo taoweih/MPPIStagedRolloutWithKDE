@@ -171,12 +171,13 @@ class MPPIMemoryContinuous(SamplingBasedController):
         num_knots: int = 4,
         iterations: int = 1,
         state_selection_function: Optional[Callable[[mjx.Data], jax.Array]] = None,
-
+        din: int = 2,
         use_hash_grid: bool = True,
         grid_min = -10.0,
         grid_max = 10.0,
         online_learning_rate = 1e-3,
         goal_position = jnp.array([[0, 0]]),
+        heuristic_discount_factor: float = 0.99,
     ) -> None:
         """Initialize the controller.
 
@@ -226,14 +227,16 @@ class MPPIMemoryContinuous(SamplingBasedController):
         else:
             self.state_selection_function = state_selection_function
 
+        self.din = din
         self.grid_min = grid_min
         self.grid_max = grid_max
         self.use_hash_grid = use_hash_grid
-        model = NeuralNet(din=2, dout=1, use_hash_grid= self.use_hash_grid, grid_min=self.grid_min, grid_max=self.grid_max)
+        model = NeuralNet(din=self.din, dout=1, use_hash_grid=self.use_hash_grid, grid_min=self.grid_min, grid_max=self.grid_max)
         self.graphdef, self.nn_weight_template, self.static_state= nnx.split(model, nnx.Param,...)
         self.nn_learning_rate = online_learning_rate
 
         self.goal_position = goal_position
+        self.heuristic_discount_factor = heuristic_discount_factor
 
     def sizes(self):
         return self._sizes
@@ -278,13 +281,13 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         rng = jax.random.PRNGKey(42) 
         num_anchors = 10000
-        anchor_states = jax.random.uniform(rng, (num_anchors, 2), minval=self.grid_min, maxval=self.grid_max)
+        anchor_states = jax.random.uniform(rng, (num_anchors, self.din), minval=self.grid_min, maxval=self.grid_max)
         anchor_targets = model(anchor_states).squeeze()
 
         # hard set goal state
         goal_state = self.goal_position
         goal_target = jnp.array([0.0]) 
-        goal_weight = jnp.array([200.0])
+        goal_weight = jnp.array([200000.0])
 
         all_states = jnp.concatenate([state, anchor_states, goal_state], axis=0)
         all_targets = jnp.concatenate([value, anchor_targets, goal_target], axis=0)
@@ -496,7 +499,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         controls: jax.Array,
         knots: jax.Array,
         global_memory: nnx.State = None,
-        using_staged_rollout: bool = True,
+        using_staged_rollout: bool = False,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
@@ -634,16 +637,27 @@ class MPPIMemoryContinuous(SamplingBasedController):
         sum_cost = jnp.sum(costs, axis=1)
         min_idx = jnp.argmin(sum_cost)
 
-        # only update heuristic for initial state
-        # new_h_value = sum_cost[min_idx]
-        # global_memory = self.update_heuristic(global_memory,self.state_selection_function(state),new_h_value)
+        # only update heuristic for initial state (true RTAA* style)
+        jnp_states = jax.vmap(self.state_selection_function)(states)
+        new_h_value = sum_cost[min_idx]
+        initial_state = jnp_states[min_idx][0]  # first state of best trajectory
+        global_memory = self.update_heuristic(global_memory, initial_state, new_h_value)
 
         # update heuristic along lowest cost trajectory
-        jnp_states = jax.vmap(self.state_selection_function)(states)
+        # jnp_states = jax.vmap(self.state_selection_function)(states)
+        # best_trajectory_states = jnp_states[min_idx]
+        # best_trajectory_costs = costs[min_idx]
+        # Original undiscounted cumsum:
+        # cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
+        # Discounted cumsum: G_t = c_t + gamma*c_{t+1} + gamma^2*c_{t+2} + ...
+        # Bounded by c_max/(1-gamma) regardless of horizon length
+        # def _discounted_cumsum_fn(carry, cost):
+        #     return cost + self.heuristic_discount_factor * carry, cost + self.heuristic_discount_factor * carry
+        # _, cumsum_costs = jax.lax.scan(_discounted_cumsum_fn, 0.0, best_trajectory_costs[::-1])
+        # cumsum_costs = cumsum_costs[::-1]
+        # global_memory, _ , _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
+
         best_trajectory_states = jnp_states[min_idx]
-        best_trajectory_costs = costs[min_idx]
-        cumsum_costs = jnp.cumsum(best_trajectory_costs[::-1])[::-1]
-        global_memory, _ , _ = jax.lax.fori_loop(0,cumsum_costs.shape[0], _fori_fn, (global_memory,best_trajectory_states[::-1], cumsum_costs[::-1]))
 
         return (best_trajectory_states, jnp_states), Trajectory(
             controls=controls,

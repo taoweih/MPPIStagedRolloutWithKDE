@@ -496,19 +496,20 @@ if __name__ == "__main__":
 
 
     # Set up the controller
-    # ctrl = MPPIStagedRollout(
-    #     task,
-    #     num_samples=512,
-    #     noise_level=2.0,
-    #     temperature=0.01,
-    #     num_randomizations=1,
-    #     plan_horizon=1.5,
-    #     spline_type="zero",
-    #     num_knots=16,
-    #     kde_bandwidth=0.1,
-    #     # state_weight=jnp.array([1,1,0])
-    #     state_selection_function= state_selection_function,
-    # )
+    ctrl = MPPIStagedRollout(
+        task,
+        num_samples=512,
+        noise_level=2.0,
+        temperature=0.01,
+        num_randomizations=1,
+        plan_horizon=2.0,
+        spline_type="zero",
+        num_knots=16,
+        kde_bandwidth=0.1,
+        num_knots_per_stage=2,
+        # state_weight=jnp.array([1,1,0])
+        state_selection_function= state_selection_function,
+    )
 
     # ctrl = MPPI(
     #     task,
@@ -516,24 +517,24 @@ if __name__ == "__main__":
     #     noise_level=2.0,
     #     temperature=0.01,
     #     num_randomizations=1,
-    #     plan_horizon=0.2,
+    #     plan_horizon=2.0,
     #     spline_type="zero",
     #     num_knots=16,
     # )
 
-    ctrl = MPPIMemory(
-        task,
-        num_samples=512,
-        noise_level=2.0,
-        temperature=0.0001,
-        num_randomizations=1,
-        plan_horizon=0.2,
-        spline_type="zero",
-        num_knots=16,
-        kde_bandwidth=0.1,
-        # state_weight=jnp.array([1,1,0])
-        state_selection_function= state_selection_function,
-    )
+    # ctrl = MPPIMemory(
+    #     task,
+    #     num_samples=512,
+    #     noise_level=2.0,
+    #     temperature=0.0001,
+    #     num_randomizations=1,
+    #     plan_horizon=0.2,
+    #     spline_type="zero",
+    #     num_knots=16,
+    #     kde_bandwidth=0.1,
+    #     # state_weight=jnp.array([1,1,0])
+    #     state_selection_function= state_selection_function,
+    # )
         
 
 
@@ -543,11 +544,20 @@ if __name__ == "__main__":
 
     mj_data = mujoco.MjData(mj_model)
 
-    run_interactive_visualize_discrete(
-            ctrl,
-            mj_model,
-            mj_data,
-            frequency=50,
-            show_traces=False,
-            record_video=False,
-        )
+    run_interactive(
+        ctrl,
+        mj_model,
+        mj_data,
+        frequency=50,
+        show_traces=False,
+        record_video=False,
+    )   
+
+    # run_interactive_visualize_discrete(
+    #         ctrl,
+    #         mj_model,
+    #         mj_data,
+    #         frequency=50,
+    #         show_traces=False,
+    #         record_video=False,
+    #     )

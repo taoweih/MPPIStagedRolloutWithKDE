@@ -137,4 +137,9 @@
   <keyframe>
     <key name="home" qpos="-1.63 -1.76 2.98 0 0 0" ctrl="-1.63 -1.76 2.98 0 0 0"/>
   </keyframe>
+  
+  <sensor>
+    <framelinvel name="ee_linvel" objtype="site" objname="attachment_site"/>
+  </sensor>
+
 </mujoco>

@@ -260,7 +260,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
                 
             return loss_fn(model)
 
-        for i in range(1000):
+        for i in range(3000):
             loss = train_step(model, grid_inputs, grid_targets, optimizer)
             if i % 10 == 0:
                 print(f"Iter {i}, Loss: {loss:.4f}")
@@ -270,7 +270,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         #############################################################################
 
         # while viewer.is_running():
-        for iter in tqdm(range(501)):
+        for iter in tqdm(range(1001)):
         
             start_time = time.time()
 
@@ -650,8 +650,8 @@ if __name__ == "__main__":
     ctrl = MPPIMemoryContinuous(
         task,
         num_samples=512,
-        noise_level=2.0,
-        temperature=0.0001,
+        noise_level=3.0,
+        temperature=0.001,
         num_randomizations=1,
         plan_horizon=0.2,
         spline_type="zero",

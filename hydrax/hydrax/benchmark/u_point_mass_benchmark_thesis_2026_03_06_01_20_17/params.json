@@ -1,0 +1,29 @@
+{
+    "MPPI": {
+        "Number of samples": 512,
+        "Noise level": 3.0,
+        "Temperature": 0.001,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots (tuned)": 8
+    },
+    "MPPI staged rollout": {
+        "Number of samples": 512,
+        "Noise level": 3.0,
+        "Temperature": 0.001,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots (tuned)": 16,
+        "Number of knots per stage (tuned)": 4,
+        "KDE Bandwidth (tuned)": 0.15
+    },
+    "MPPI memory continuous": {
+        "Number of samples": 512,
+        "Noise level": 3.0,
+        "Temperature": 0.001,
+        "Horizon (s)": 2.0,
+        "Spline type": "zero",
+        "Number of knots": 16,
+        "KDE Bandwidth": 0.15
+    }
+}

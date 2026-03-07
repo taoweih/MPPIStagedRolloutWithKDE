@@ -10,7 +10,7 @@ from hydrax.task_base import Task
 
 
 class UR5e(Task):
-    """Standup task for the Unitree G1 humanoid."""
+    """Reach task for the UR5e robot arm."""
 
     def __init__(self) -> None:
         """Load the MuJoCo model and set task parameters."""
@@ -18,7 +18,7 @@ class UR5e(Task):
         mj_model.opt.timestep = 0.01
         super().__init__(
             mj_model,
-            trace_sites= None #["imu_in_torso", "left_foot", "right_foot"],
+            trace_sites=None,
         )
 
         self.end_effector_pos_id = mujoco.mj_name2id(
@@ -28,16 +28,28 @@ class UR5e(Task):
             self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "goal"
         )
 
-    def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
-        end_effector_pos = state.site_xpos[self.end_effector_pos_id]
-        goal_pos = state.xpos[self.goal_pos_id]
+        self.ee_vel_sensor_id = mujoco.mj_name2id(
+            self.mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "ee_linvel"
+        )
+        self.ee_vel_sensor_adr = self.mj_model.sensor_adr[self.ee_vel_sensor_id]
 
-        cost = 10*jnp.sum(jnp.square(end_effector_pos - goal_pos),axis=0)
-        return cost
+    def running_cost(self, state: mjx.Data, control: jax.Array) -> jax.Array:
+        ee_vel = state.sensordata[self.ee_vel_sensor_adr:self.ee_vel_sensor_adr + 3]
+        speed = jnp.sqrt(jnp.sum(jnp.square(ee_vel)))
+        return 10*speed
 
     def terminal_cost(self, state: mjx.Data) -> jax.Array:
-        """The terminal cost ϕ(x_T)."""
-        return self.running_cost(state, jnp.zeros(self.model.nu))
+        """Terminal cost H(y): Euclidean distance from end-effector to goal."""
+        end_effector_pos = state.site_xpos[self.end_effector_pos_id]
+        goal_pos = state.xpos[self.goal_pos_id]
+        distance = jnp.sqrt(jnp.sum(jnp.square(end_effector_pos - goal_pos)))
+        return 10*distance
+
+    def success_function(self, state, control):
+        """Success metric: distance to goal (meters)."""
+        end_effector_pos = state.site_xpos[self.end_effector_pos_id]
+        goal_pos = state.xpos[self.goal_pos_id]
+        return jnp.sqrt(jnp.sum(jnp.square(end_effector_pos - goal_pos)))
 
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomize the friction parameters."""
