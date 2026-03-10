@@ -178,6 +178,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
         online_learning_rate = 1e-3,
         goal_position = jnp.array([[0, 0]]),
         heuristic_discount_factor: float = 0.99,
+        use_staged_rollout: bool = False,
     ) -> None:
         """Initialize the controller.
 
@@ -237,6 +238,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         self.goal_position = goal_position
         self.heuristic_discount_factor = heuristic_discount_factor
+        self.use_staged_rollout = use_staged_rollout
 
     def sizes(self):
         return self._sizes
@@ -499,7 +501,6 @@ class MPPIMemoryContinuous(SamplingBasedController):
         controls: jax.Array,
         knots: jax.Array,
         global_memory: nnx.State = None,
-        using_staged_rollout: bool = False,
     ) -> Tuple[mjx.Data, Trajectory]:
         """Rollout control sequences (in parallel) and compute the costs.
 
@@ -534,7 +535,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
             )
             return final_state, (states, costs, trace_sites)
         
-        if using_staged_rollout:
+        if self.use_staged_rollout:
         
             #### rollout and resample start ####
 

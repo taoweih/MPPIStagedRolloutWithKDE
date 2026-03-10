@@ -24,10 +24,10 @@ from flax import nnx
 import optax
 
 
-def _sync_tree(x):
-    return jax.tree_util.tree_map(
-        lambda a: a.block_until_ready() if hasattr(a, "block_until_ready") else a, x
-    )
+# def _sync_tree(x):
+#     return jax.tree_util.tree_map(
+#         lambda a: a.block_until_ready() if hasattr(a, "block_until_ready") else a, x
+#     )
 
 
 def run_benchmark_memory_upoint(
@@ -202,20 +202,32 @@ def run_benchmark_memory_upoint(
 
 # Need to be wrapped in main loop for async simulation
 if __name__ == "__main__":
-    task = UPointMass()
     special_name = "thesis"
 
+    task = UPointMass()
     goal_threshold = 0.4
 
-    tune_horizon = 1.5
-    tune_cpu_num = 3
-    tune_gpu_num = 0
+    # sweep settings
+    NUM_TRIALS = 50
+
+    Horizon_steps = 20
+    Horizon_start = 0.5
+    Horizon_end = 2.0
+
+    Sample_steps = 20
+    Sample_start = 128
+    Sample_end = 4096
+    samples_list = np.linspace(Sample_start, Sample_end, Sample_steps).astype(int)
 
     # manually set common parameters (not auto-tuned)
     SPLINE_TYPE = "zero"
     NUM_SAMPLES = 512
     NOISE_LEVEL = 3.0  
     TEMPERATURE = 0.001 
+
+    # tune_horizon = 1.5
+    # tune_cpu_num = 3
+    # tune_gpu_num = 0
 
     # # tune MPPI num_knots
     # def objective_mppi(config):
@@ -276,23 +288,22 @@ if __name__ == "__main__":
     # NUM_KNOTS_PER_STAGE = results.get_best_result().config["num_knots_per_stage"]
     # KDE_BANDWIDTH = results.get_best_result().config["kde_bandwidth"]
 
-    Horizon_steps = 40
-    Horizon_start = 0.5
-    Horizon_end = 2.0
-
     MPPI_NUM_KNOTS = 16
     STAGED_NUM_KNOTS = 16
     NUM_KNOTS_PER_STAGE = 4
     KDE_BANDWIDTH = 0.15
     MEMORY_NUM_KNOTS = 16
 
-    NUM_TRIALS = 20
+
     
-    success = np.zeros((3, Horizon_steps))
-    success_iteration = np.zeros((3, Horizon_steps))
-    all_frequency = np.zeros((3, Horizon_steps))
-    all_state_trajectory = [[], [], []]
-    all_control_trajectory = [[], [], []]
+    NUM_CONTROLLERS = 4
+    ctrl_names = ["MPPI", "MPPI Density", "MPPI Memory", "MPPI Density + Memory"]
+
+    success = np.zeros((NUM_CONTROLLERS, Horizon_steps))
+    success_time = np.zeros((NUM_CONTROLLERS, Horizon_steps))
+    all_frequency = np.zeros((NUM_CONTROLLERS, Horizon_steps))
+    all_state_trajectory = [[] for _ in range(NUM_CONTROLLERS)]
+    all_control_trajectory = [[] for _ in range(NUM_CONTROLLERS)]
 
     def state_selection_function(state: mjx.Data) -> jax.Array:
         return state.qpos[..., 0:2]
@@ -311,9 +322,18 @@ if __name__ == "__main__":
 
                     MPPIMemoryContinuous(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
                                     plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=MEMORY_NUM_KNOTS,
+                                    state_selection_function=state_selection_function,
+                                    grid_min=-1.0, grid_max=1.0, online_learning_rate=1e-3,
+                                    goal_position=jnp.array([[0.025, 0.775]]),
+                                    use_staged_rollout=False),
+
+                    MPPIMemoryContinuous(task, num_samples=NUM_SAMPLES, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
+                                    plan_horizon=HORIZON, spline_type=SPLINE_TYPE, num_knots=MEMORY_NUM_KNOTS,
+                                    num_knots_per_stage=NUM_KNOTS_PER_STAGE,
                                     kde_bandwidth=KDE_BANDWIDTH, state_selection_function=state_selection_function,
                                     grid_min=-1.0, grid_max=1.0, online_learning_rate=1e-3,
-                                    goal_position=jnp.array([[0.025, 0.775]]))]
+                                    goal_position=jnp.array([[0.025, 0.775]]),
+                                    use_staged_rollout=True)]
         
         for j in range(len(ctrl_list)):
             ctrl = ctrl_list[j]
@@ -342,98 +362,228 @@ if __name__ == "__main__":
                     num_trials=NUM_TRIALS,
                 )
 
-            success_iteration[j, h] = avg_success_iteration
-            success[j, h] = num_success
+            success_time[j, h] = avg_success_iteration * 0.01
+            success[j, h] = num_success / NUM_TRIALS * 100
             all_frequency[j, h] = control_freq
             all_state_trajectory[j].append(state_trajectory)
             all_control_trajectory[j].append(control_trajectory)
 
-    #params
+    # Save directory (shared by both sweeps)
     curr_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     save_dir = Path(ROOT)/"benchmark"/f"u_point_mass_benchmark_{special_name}_{curr_time}"
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    file_path = os.path.join(save_dir, "params.json")
-
-    params = {
-        "MPPI": {
-            "Number of samples": NUM_SAMPLES,
-            "Noise level": NOISE_LEVEL,
-            "Temperature": TEMPERATURE,
-            "Horizon (s)": HORIZON,
-            "Spline type": SPLINE_TYPE,
-            "Number of knots (tuned)": MPPI_NUM_KNOTS
-        },
-        "MPPI staged rollout": {
-            "Number of samples": NUM_SAMPLES,
-            "Noise level": NOISE_LEVEL,
-            "Temperature": TEMPERATURE,
-            "Horizon (s)": HORIZON,
-            "Spline type": SPLINE_TYPE,
-            "Number of knots (tuned)": STAGED_NUM_KNOTS,
-            "Number of knots per stage (tuned)": NUM_KNOTS_PER_STAGE,
-            "KDE Bandwidth (tuned)": KDE_BANDWIDTH
-        },
-        "MPPI memory continuous": {
-            "Number of samples": NUM_SAMPLES,
-            "Noise level": NOISE_LEVEL,
-            "Temperature": TEMPERATURE,
-            "Horizon (s)": HORIZON,
-            "Spline type": SPLINE_TYPE,
-            "Number of knots": MEMORY_NUM_KNOTS,
-            "KDE Bandwidth": KDE_BANDWIDTH
-        }
-    }
-
-    with open(file_path, "w") as f:
-        json.dump(params, f, indent=4)
-
-    # state and control trajectories
-    file_path = os.path.join(save_dir, "trajectory.npz")
+    # Horizon sweep: state and control trajectories
+    file_path = os.path.join(save_dir, "horizon_trajectory.npz")
     all_state_trajectory = np.array(all_state_trajectory)
     all_control_trajectory = np.array(all_control_trajectory)
     np.savez(file_path, state_trajectory=all_state_trajectory, control_trajectory=all_control_trajectory)
     
-    # control frequency
-    file_path = os.path.join(save_dir, "frequency.csv")
+    # Horizon sweep: control frequency
+    file_path = os.path.join(save_dir, "horizon_frequency.csv")
     np.savetxt(file_path, all_frequency, delimiter=",",fmt="%.2e")
 
     plt.figure()
     for j in range(all_frequency.shape[0]):
-        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), all_frequency[j], label=type(ctrl_list[j]).__name__)
+        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), all_frequency[j], label=ctrl_names[j])
     plt.title(f'Task {type(task).__name__}')
-    plt.xlabel("Horizon (seconds)")
+    plt.xlabel("Horizon (s)")
     plt.ylabel("Control Frequency (HZ)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_dir / f"frequency.png", dpi=300)
+    plt.savefig(save_dir / f"horizon_frequency.png", dpi=300)
     plt.close()
 
-    # sucess rate
-    file_path = os.path.join(save_dir, "success_count.csv")
-    np.savetxt(file_path, (success).astype(int), delimiter=",",fmt="%d")
+    # Horizon sweep: success rate
+    file_path = os.path.join(save_dir, "horizon_success_count.csv")
+    np.savetxt(file_path, success, delimiter=",",fmt="%.1f")
 
     plt.figure()
     for j in range(success.shape[0]):
-        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), success[j], label=type(ctrl_list[j]).__name__)
+        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), success[j], label=ctrl_names[j])
     plt.title(f'Task {type(task).__name__}')
-    plt.xlabel("Horizon (seconds)")
+    plt.xlabel("Horizon (s)")
+    plt.ylabel("Success Rate (%)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_dir / f"horizon_success_count.png", dpi=300)
+    plt.close()
+
+    file_path = os.path.join(save_dir, "horizon_success_time.csv")
+    np.savetxt(file_path, success_time, delimiter=",",fmt="%.4f")
+
+    plt.figure()
+    x_horizon = np.linspace(Horizon_start, Horizon_end, Horizon_steps)
+    for j in range(success.shape[0]):
+        mask = success_time[j] != 0
+        if np.any(mask):
+            plt.plot(x_horizon[mask], success_time[j][mask], label=ctrl_names[j])
+    plt.title(f'Task {type(task).__name__}')
+    plt.xlabel("Horizon (s)")
+    plt.ylabel("Average success time (s)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_dir / f"horizon_success_time.png", dpi=300)
+    plt.close()
+
+    # ==================== NUM_SAMPLES SWEEP ====================
+    SWEEP_HORIZON = 1.2  # fixed horizon for the samples sweep
+
+    Sample_steps = len(samples_list)
+
+    success_samples = np.zeros((NUM_CONTROLLERS, Sample_steps))
+    success_time_samples = np.zeros((NUM_CONTROLLERS, Sample_steps))
+    all_frequency_samples = np.zeros((NUM_CONTROLLERS, Sample_steps))
+    all_state_trajectory_samples = [[] for _ in range(NUM_CONTROLLERS)]
+    all_control_trajectory_samples = [[] for _ in range(NUM_CONTROLLERS)]
+
+    for s in tqdm(range(Sample_steps)):
+        n_samples = int(samples_list[s])
+
+        ctrl_list_samples = [
+            MPPI(task, num_samples=n_samples, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
+                 plan_horizon=SWEEP_HORIZON, spline_type=SPLINE_TYPE, num_knots=MPPI_NUM_KNOTS),
+
+            MPPIStagedRollout(task, num_samples=n_samples, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
+                              num_knots_per_stage=NUM_KNOTS_PER_STAGE, plan_horizon=SWEEP_HORIZON,
+                              spline_type=SPLINE_TYPE, num_knots=STAGED_NUM_KNOTS, kde_bandwidth=KDE_BANDWIDTH),
+
+            MPPIMemoryContinuous(task, num_samples=n_samples, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
+                                 plan_horizon=SWEEP_HORIZON, spline_type=SPLINE_TYPE, num_knots=MEMORY_NUM_KNOTS,
+                                 state_selection_function=state_selection_function,
+                                 grid_min=-1.0, grid_max=1.0, online_learning_rate=1e-3,
+                                 goal_position=jnp.array([[0.025, 0.775]]),
+                                 use_staged_rollout=False),
+
+            MPPIMemoryContinuous(task, num_samples=n_samples, noise_level=NOISE_LEVEL, temperature=TEMPERATURE,
+                                 plan_horizon=SWEEP_HORIZON, spline_type=SPLINE_TYPE, num_knots=MEMORY_NUM_KNOTS,
+                                 num_knots_per_stage=NUM_KNOTS_PER_STAGE,
+                                 kde_bandwidth=KDE_BANDWIDTH, state_selection_function=state_selection_function,
+                                 grid_min=-1.0, grid_max=1.0, online_learning_rate=1e-3,
+                                 goal_position=jnp.array([[0.025, 0.775]]),
+                                 use_staged_rollout=True)]
+
+        for j in range(len(ctrl_list_samples)):
+            ctrl = ctrl_list_samples[j]
+
+            mj_model = task.mj_model
+            mj_model.opt.timestep = 0.01
+
+            mj_data = mujoco.MjData(mj_model)
+
+            if isinstance(ctrl, MPPIMemoryContinuous):
+                num_success, control_freq, state_trajectory, control_trajectory, avg_success_iteration = run_benchmark_memory_upoint(
+                    ctrl,
+                    mj_model,
+                    mj_data,
+                    frequency=50,
+                    GOAL_THRESHOLD=goal_threshold,
+                    num_trials=NUM_TRIALS,
+                )
+            else:
+                num_success, control_freq, state_trajectory, control_trajectory, avg_success_iteration = run_benchmark(
+                    ctrl,
+                    mj_model,
+                    mj_data,
+                    frequency=50,
+                    GOAL_THRESHOLD=goal_threshold,
+                    num_trials=NUM_TRIALS,
+                )
+
+            success_time_samples[j, s] = avg_success_iteration * 0.01
+            success_samples[j, s] = num_success / NUM_TRIALS * 100
+            all_frequency_samples[j, s] = control_freq
+            all_state_trajectory_samples[j].append(state_trajectory)
+            all_control_trajectory_samples[j].append(control_trajectory)
+
+    # Samples sweep: state and control trajectories
+    file_path = os.path.join(save_dir, "samples_trajectory.npz")
+    all_state_trajectory_samples = np.array(all_state_trajectory_samples)
+    all_control_trajectory_samples = np.array(all_control_trajectory_samples)
+    np.savez(file_path, state_trajectory=all_state_trajectory_samples, control_trajectory=all_control_trajectory_samples)
+
+    # Samples sweep: control frequency
+    file_path = os.path.join(save_dir, "samples_frequency.csv")
+    np.savetxt(file_path, all_frequency_samples, delimiter=",", fmt="%.2e")
+
+    plt.figure()
+    for j in range(all_frequency_samples.shape[0]):
+        plt.plot(samples_list, all_frequency_samples[j], label=ctrl_names[j])
+    plt.title(f'Task {type(task).__name__}')
+    plt.xlabel("Number of Samples")
+    plt.ylabel("Control Frequency (HZ)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_dir / f"samples_frequency.png", dpi=300)
+    plt.close()
+
+    # Samples sweep: success rate
+    file_path = os.path.join(save_dir, "samples_success_count.csv")
+    np.savetxt(file_path, success_samples, delimiter=",", fmt="%.1f")
+
+    plt.figure()
+    for j in range(success_samples.shape[0]):
+        plt.plot(samples_list, success_samples[j], label=ctrl_names[j])
+    plt.title(f'Task {type(task).__name__}')
+    plt.xlabel("Number of Samples")
     plt.ylabel("Sucess Rate (%)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_dir / f"success_count.png", dpi=300)
+    plt.savefig(save_dir / f"samples_success_count.png", dpi=300)
     plt.close()
 
-    file_path = os.path.join(save_dir, "sucess_iteration.csv")
-    np.savetxt(file_path, (success_iteration).astype(int), delimiter=",",fmt="%d")
+    file_path = os.path.join(save_dir, "samples_success_time.csv")
+    np.savetxt(file_path, success_time_samples, delimiter=",", fmt="%.4f")
 
     plt.figure()
-    for j in range(success.shape[0]):
-        plt.plot(np.linspace(Horizon_start, Horizon_end, Horizon_steps), success_iteration[j], label=type(ctrl_list[j]).__name__)
+    for j in range(success_samples.shape[0]):
+        mask = success_time_samples[j] != 0
+        if np.any(mask):
+            plt.plot(samples_list[mask], success_time_samples[j][mask], label=ctrl_names[j])
     plt.title(f'Task {type(task).__name__}')
-    plt.xlabel("Horizon (seconds)")
-    plt.ylabel("Average success iteration")
+    plt.xlabel("Number of Samples")
+    plt.ylabel("Average success time (s)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(save_dir / f"success_iteration.png", dpi=300)
+    plt.savefig(save_dir / f"samples_success_time.png", dpi=300)
     plt.close()
+
+    # Save combined params.json for both sweeps
+    file_path = os.path.join(save_dir, "params.json")
+    params = {
+        "horizon_sweep": {
+            "Horizon start": Horizon_start,
+            "Horizon end": Horizon_end,
+            "Horizon steps": Horizon_steps,
+            "Number of samples": NUM_SAMPLES,
+        },
+        "samples_sweep": {
+            "Fixed horizon (s)": SWEEP_HORIZON,
+            "Sample values": samples_list.tolist(),
+        },
+        "common": {
+            "Noise level": NOISE_LEVEL,
+            "Temperature": TEMPERATURE,
+            "Spline type": SPLINE_TYPE,
+            "Number of trials": NUM_TRIALS,
+            "Goal threshold": goal_threshold,
+        },
+        "MPPI": {
+            "Number of knots": MPPI_NUM_KNOTS,
+        },
+        "MPPI Density": {
+            "Number of knots": STAGED_NUM_KNOTS,
+            "Number of knots per stage": NUM_KNOTS_PER_STAGE,
+            "KDE Bandwidth": KDE_BANDWIDTH,
+        },
+        "MPPI Memory": {
+            "Number of knots": MEMORY_NUM_KNOTS,
+        },
+        "MPPI Density + Memory": {
+            "Number of knots": MEMORY_NUM_KNOTS,
+            "Number of knots per stage": NUM_KNOTS_PER_STAGE,
+            "KDE Bandwidth": KDE_BANDWIDTH,
+        }
+    }
+    with open(file_path, "w") as f:
+        json.dump(params, f, indent=4)
