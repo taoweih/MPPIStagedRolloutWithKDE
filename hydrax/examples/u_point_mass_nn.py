@@ -304,10 +304,9 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
                 
                 im = ax.imshow(image, origin='lower', extent=[-1, 1, -1, 1], cmap="Blues", vmin=-2, vmax=200)
                     
-                plt.colorbar(im, ax=ax, label='Predicted Cost')
-                ax.set_title(f"Learned Cost Landscape")
-                ax.set_xlabel("X")
-                ax.set_ylabel("Y")
+                ax.set_xlabel("X", fontsize=28)
+                ax.set_ylabel("Y", fontsize=28)
+                ax.tick_params(axis='both', labelsize=24)
 
                 # extract current states
                 rollout_states, nominal_trajectory_states = rollout_states

@@ -59,6 +59,12 @@ class Ant(Task):
         distance_cost = jnp.sqrt(jnp.sum(jnp.square(end_effector_pos - goal_pos), axis=0))
         return 10*distance_cost
 
+    def success_function(self, state: mjx.Data, control: jax.Array) -> jax.Array:
+        """Distance-to-goal success metric used by benchmark stopping criteria."""
+        end_effector_pos = state.xpos[self.end_effector_pos_id]
+        goal_pos = state.xpos[self.goal_pos_id]
+        return jnp.sqrt(jnp.sum(jnp.square(end_effector_pos - goal_pos), axis=0))
+
     def domain_randomize_model(self, rng: jax.Array) -> Dict[str, jax.Array]:
         """Randomize the friction parameters."""
         n_geoms = self.model.geom_friction.shape[0]

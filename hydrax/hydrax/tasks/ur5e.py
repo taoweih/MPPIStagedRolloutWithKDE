@@ -43,7 +43,7 @@ class UR5e(Task):
         end_effector_pos = state.site_xpos[self.end_effector_pos_id]
         goal_pos = state.xpos[self.goal_pos_id]
         distance = jnp.sqrt(jnp.sum(jnp.square(end_effector_pos - goal_pos)))
-        return 10*distance
+        return 100*distance
 
     def success_function(self, state, control):
         """Success metric: distance to goal (meters)."""

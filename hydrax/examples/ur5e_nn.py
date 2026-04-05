@@ -31,6 +31,9 @@ from tqdm import tqdm
 from flax import nnx
 import optax
 
+from pathlib import Path
+curr_dir = Path(__file__).parent
+
 def _sync_tree(x):
     return jax.tree_util.tree_map(
         lambda a: a.block_until_ready() if hasattr(a, "block_until_ready") else a, x
@@ -172,28 +175,24 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
 
         global_memory = controller.nn_weight_template
 
-        # Pretrain heuristic by sampling random joint configurations
+        # Pretrain directly in end-effector Cartesian space (x, y, z).
         num_starting = 2000000
-        # UR5e has 6 revolute joints; sample within joint limits [-pi, pi]
-        joint_samples = jax.random.uniform(
-            jax.random.PRNGKey(52), (num_starting, 6),
-            minval=-jnp.pi, maxval=jnp.pi
+        grid_inputs = jax.random.uniform(
+            jax.random.PRNGKey(52),
+            (num_starting, 3),
+            minval=-2.0,
+            maxval=2.0,
         )
 
-        def get_ee_and_cost(qpos_joints):
-            """Forward kinematics: map joint angles -> EE position and terminal cost."""
-            d = mjx.make_data(controller.task.model)
-            default_qpos = d.qpos
-            qpos = default_qpos.at[0:6].set(qpos_joints)
-            d = d.replace(qpos=qpos)
-            d = mjx.kinematics(controller.task.model, d)
-            d = mjx.com_pos(controller.task.model, d)
-            ee_pos = d.site_xpos[ee_site_id]
-            cost = controller.task.terminal_cost(d)
-            return ee_pos, cost
+        # Goal is fixed by the scene mocap body; compute its world position once.
+        goal_data = mujoco.MjData(mj_model)
+        mujoco.mj_forward(mj_model, goal_data)
+        goal_pos = jnp.array(goal_data.xpos[task.goal_pos_id])
 
-        ee_positions, grid_targets = jax.vmap(get_ee_and_cost)(joint_samples)
-        grid_inputs = ee_positions
+        def get_true_cost(ee_pos):
+            return 10.0 * jnp.sqrt(jnp.sum(jnp.square(ee_pos - goal_pos)))
+
+        grid_targets = jax.vmap(get_true_cost)(grid_inputs)
 
         model = nnx.merge(controller.graphdef, global_memory, controller.static_state)
         optimizer = nnx.Optimizer(model, optax.adam(learning_rate=1e-2), wrt=nnx.Param)
@@ -209,9 +208,9 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             optimizer.update(model, grads)
             return loss_fn(model)
 
-        for i in range(10000):
+        for i in range(20000):
             loss = train_step(model, grid_inputs, grid_targets, optimizer)
-            if i % 10 == 0:
+            if i % 100 == 0:
                 print(f"Iter {i}, Loss: {loss:.6f}")
 
         _, global_memory, _ = nnx.split(model, nnx.Param, ...)
@@ -219,7 +218,7 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         #############################################################################
 
         # while viewer.is_running():
-        for iter in tqdm(range(501)): 
+        for iter in tqdm(range(1001)): 
 
             start_time = time.time()
 
@@ -236,14 +235,14 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
             plan_start = time.time()
             policy_params, rollouts, rollout_states, new_global_memory = jit_optimize(mjx_data, policy_params, global_memory=global_memory)
 
-            if iter % 50 == 0:
+            if False:#iter % 50 == 0:
                 # Obstacle cylinders from scene.xml:
                 # obstacle1: pos=(0, 0.3, 0.20), size=(0.065, 0.20)
                 # obstacle2: pos=(0.2, 0.3, 0.20), size=(0.065, 0.20)
                 # obstacle3: pos=(-0.2, 0.3, 0.20), size=(0.065, 0.20)
                 # obstacle4: pos=(-0.2, 0.5, 0.20), size=(0.065, 0.20)
                 # obstacle5: pos=(-0.2, 0.7, 0.20), size=(0.065, 0.20)
-                goal_xyz = (0.0, 0.6, 0.25)
+                goal_xyz = (0.0, 0.6, 0.1)
                 pb_x = [-0.6, 0.6]
                 pb_y = [-0.2, 1.0]
                 pb_z = [-0.1, 0.7]
@@ -439,7 +438,9 @@ def run_interactive_visualize_continuous(  # noqa: PLR0912, PLR0915
         plt.xlabel("Iterations")
         plt.ylabel("Current objective")
         plt.title(f'Horizon: {controller.plan_horizon}s')
-        plt.show()
+        plt.savefig(curr_dir/f"success_function.png", dpi=300)
+        plt.close()
+        # plt.show()
 
     print("")
 
@@ -453,7 +454,7 @@ if __name__ == "__main__":
     # Define the task (cost and dynamics)
     task = UR5e()
 
-    num_knots = 16
+    num_knots = 8
 
     # State selection: end-effector Cartesian position (3D)
     ee_site_id = task.end_effector_pos_id
@@ -464,22 +465,27 @@ if __name__ == "__main__":
     # Set up the controller with neural network heuristic memory
     ctrl = MPPIMemoryContinuous(
         task,
-        num_samples=1024,
-        noise_level=1.0,
+        num_samples=512,
+        noise_level=3.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=0.2,
+        plan_horizon=0.1,
         spline_type="zero",
         num_knots=num_knots,
-        num_knots_per_stage=4,
+        num_knots_per_stage=2,
         kde_bandwidth=0.3,
         state_selection_function=state_selection_function,
+        use_staged_rollout=False,
 
         din=3,
-        grid_min=-1.0,
-        grid_max=1.0,
-        online_learning_rate=1e-3,
-        goal_position=jnp.array([[0.0, 0.6, 0.25]]),
+        grid_min=-2.0,
+        grid_max=2.0,
+        online_learning_rate=1e-2,
+        goal_position=jnp.array([[0.0, 0.6, 0.1]]),
+
+        goal_weight   = 200000.0,
+        num_anchors = 10000,
+        new_weight  = 1000.0,
     )
 
     # Define the model used for simulation

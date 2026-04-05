@@ -21,6 +21,9 @@ import copy
 
 import pandas as pd
 
+from pathlib import Path
+curr_dir = Path(__file__).parent
+
 """
 Tools for deterministic (synchronous) simulation, with the simulator and
 controller running one after the other in the same thread.
@@ -82,6 +85,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     reference_fps: float = 30.0,
     record_video: bool = False,
     head_less: bool = False,
+    rng_seed: int = 0,
 ) -> None:
     """Run an interactive simulation with the MPC controller.
 
@@ -136,7 +140,7 @@ def run_interactive(  # noqa: PLR0912, PLR0915
     mjx_data = mjx_data.replace(
         mocap_pos=mj_data.mocap_pos, mocap_quat=mj_data.mocap_quat
     )
-    policy_params = controller.init_params(initial_knots=initial_knots)
+    policy_params = controller.init_params(initial_knots=initial_knots, seed=rng_seed)
     ### Wrap this to update param stored in controller
     _jit_optimize = jax.jit(controller.optimize)
     def jit_optimize(mjx_data, policy_params, global_memory=None):
@@ -313,7 +317,8 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                 global_memory = jnp.zeros(controller.sizes())
 
             # while viewer.is_running():
-            for iter in tqdm(range(501)):
+            # for iter in tqdm(range(1001)):
+            for iter in range(1001):
             
                 start_time = time.time()
 
@@ -401,13 +406,14 @@ def run_interactive(  # noqa: PLR0912, PLR0915
                     end="\r",
                 )
 
-            # plt.figure()
-            # plt.plot(cost_array)
-            # # plt.ylim(9,13)
-            # plt.xlabel("Iterations")
-            # plt.ylabel("Current objective")
-            # plt.title(f'Horizon: {controller.plan_horizon}s')
-            # plt.show()
+            plt.figure()
+            plt.plot(cost_array)
+            # plt.ylim(9,13)
+            plt.xlabel("Iterations")
+            plt.ylabel("Current objective")
+            plt.title(f'Horizon: {controller.plan_horizon}s')
+            plt.savefig(curr_dir/f"success_function.png", dpi=300)
+            plt.close()
 
     # Preserve the last printout
     print("")

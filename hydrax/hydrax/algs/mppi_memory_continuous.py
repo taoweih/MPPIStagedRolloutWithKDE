@@ -177,6 +177,9 @@ class MPPIMemoryContinuous(SamplingBasedController):
         grid_max = 10.0,
         online_learning_rate = 1e-3,
         goal_position = jnp.array([[0, 0]]),
+        goal_weight   = 200000.0,
+        num_anchors = 10000,
+        new_weight  = 1000.0,
         heuristic_discount_factor: float = 0.99,
         use_staged_rollout: bool = False,
     ) -> None:
@@ -235,8 +238,10 @@ class MPPIMemoryContinuous(SamplingBasedController):
         model = NeuralNet(din=self.din, dout=1, use_hash_grid=self.use_hash_grid, grid_min=self.grid_min, grid_max=self.grid_max)
         self.graphdef, self.nn_weight_template, self.static_state= nnx.split(model, nnx.Param,...)
         self.nn_learning_rate = online_learning_rate
-
+        self.num_anchors = num_anchors
+        self.goal_weight = goal_weight
         self.goal_position = goal_position
+        self.new_weight = new_weight
         self.heuristic_discount_factor = heuristic_discount_factor
         self.use_staged_rollout = use_staged_rollout
 
@@ -282,14 +287,14 @@ class MPPIMemoryContinuous(SamplingBasedController):
             value = value[None, ...] 
 
         rng = jax.random.PRNGKey(42) 
-        num_anchors = 10000
+        num_anchors = self.num_anchors
         anchor_states = jax.random.uniform(rng, (num_anchors, self.din), minval=self.grid_min, maxval=self.grid_max)
         anchor_targets = model(anchor_states).squeeze()
 
         # hard set goal state
         goal_state = self.goal_position
         goal_target = jnp.array([0.0]) 
-        goal_weight = jnp.array([200000.0])
+        goal_weight = jnp.array([self.goal_weight])
 
         all_states = jnp.concatenate([state, anchor_states, goal_state], axis=0)
         all_targets = jnp.concatenate([value, anchor_targets, goal_target], axis=0)
@@ -298,7 +303,7 @@ class MPPIMemoryContinuous(SamplingBasedController):
 
         B_new = state.shape[0]
         B_anchor = num_anchors
-        weights = jnp.concatenate([jnp.ones(B_new) * 100.0, jnp.ones(B_anchor) * 1.0, goal_weight], axis=0)
+        weights = jnp.concatenate([jnp.ones(B_new) * self.new_weight, jnp.ones(B_anchor) * 1.0, goal_weight], axis=0)
         # weights = jnp.ones(B_new)
 
         def loss_fn(m, x, y, w):

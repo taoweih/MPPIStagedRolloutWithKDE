@@ -1,0 +1,41 @@
+{
+    "horizon_sweep": {
+        "Horizon start": 0.2,
+        "Horizon end": 2.0,
+        "Horizon steps": 5,
+        "Number of samples": 512
+    },
+    "samples_sweep": {
+        "Fixed horizon (s)": 0.2,
+        "Sample values": [
+            128,
+            1120,
+            2112,
+            3104,
+            4096
+        ]
+    },
+    "common": {
+        "Noise level": 0.4,
+        "Temperature": 0.01,
+        "Spline type": "zero",
+        "Number of trials": 10,
+        "Goal threshold": 0.5
+    },
+    "MPPI": {
+        "Number of knots": 16
+    },
+    "MPPI Density": {
+        "Number of knots": 16,
+        "Number of knots per stage": 4,
+        "KDE Bandwidth": 0.1
+    },
+    "MPPI Memory": {
+        "Number of knots": 16
+    },
+    "MPPI Density + Memory": {
+        "Number of knots": 16,
+        "Number of knots per stage": 4,
+        "KDE Bandwidth": 0.1
+    }
+}

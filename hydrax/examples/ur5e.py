@@ -19,13 +19,14 @@ if __name__ == "__main__":
     # Set up the controller
     ctrl = MPPI(
         task,
-        num_samples=1024,
-        noise_level=1.0,
+        num_samples=512,
+        noise_level=3.0,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=0.2,
+        plan_horizon=0.1,
         spline_type="zero",
-        num_knots=16,
+        num_knots=8,
+        seed=0,
     )
 
     # Define the model used for simulation
@@ -41,6 +42,6 @@ if __name__ == "__main__":
             mj_data,
             frequency=50,
             show_traces=False,
-            record_video=True,
+            record_video=False,
             head_less=False
         )

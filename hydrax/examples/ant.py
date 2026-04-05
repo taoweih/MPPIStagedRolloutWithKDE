@@ -16,14 +16,26 @@ if __name__ == "__main__":
     # Set up the controller
     ctrl = MPPI(
         task,
-        num_samples=512,
+        num_samples=1024,
         noise_level=0.4,
         temperature=0.01,
         num_randomizations=1,
-        plan_horizon=0.2,
+        plan_horizon=4.0,
         spline_type="zero",
         num_knots=16,
     )
+    
+    # ctrl = MPPIStagedRollout(
+    #     task, 
+    #     num_samples=512, 
+    #     noise_level=0.4, 
+    #     temperature=0.01, 
+    #     num_knots_per_stage=4, 
+    #     plan_horizon=2.0, 
+    #     spline_type="zero",
+    #     num_knots=16, 
+    #     kde_bandwidth=0.1
+    # )
 
     # ctrl = DIAL(
     #     task,
@@ -50,5 +62,6 @@ if __name__ == "__main__":
             mj_data,
             frequency=50,
             show_traces=False,
-            record_video=True,
+            record_video=False,
+            rng_seed=1,
         )
